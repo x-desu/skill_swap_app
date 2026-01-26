@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Heart } from 'lucide-react-native';
 import SwipeCard from '../../src/components/SwipeCard';
 import { useStore } from '../../src/store/useStore';
+import { useTheme } from '../../src/context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 const SWIPE_THRESHOLD = width * 0.3;
@@ -12,13 +13,14 @@ export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const { users, swipeRight, swipeLeft } = useStore();
     const [currentIndex, setCurrentIndex] = useState(0);
+    const { colors, isDark } = useTheme();
 
     // If no more users
     if (currentIndex >= users.length) {
         return (
-            <View style={[styles.container, styles.center]}>
-                <Text style={styles.noMoreText}>No more neighbors nearby!</Text>
-                <Text style={styles.subText}>Check back later for new skills.</Text>
+            <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
+                <Text style={[styles.noMoreText, { color: colors.text }]}>No more neighbors nearby!</Text>
+                <Text style={[styles.subText, { color: isDark ? '#aaa' : '#666' }]}>Check back later for new skills.</Text>
             </View>
         );
     }
@@ -38,8 +40,8 @@ export default function HomeScreen() {
     };
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-            <View style={styles.header}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: colors.background }]}>
+            <View style={[styles.header, { backgroundColor: colors.headerBackground, borderBottomColor: colors.border }]}>
                 <Text style={styles.headerTitle}>SkillSwap</Text>
             </View>
 
@@ -59,11 +61,11 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.footer}>
-                <TouchableOpacity style={[styles.button, styles.passButton]} onPress={handleSwipeLeft}>
+                <TouchableOpacity style={[styles.button, styles.passButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]} onPress={handleSwipeLeft}>
                     <X color="#FF5A5F" size={30} />
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.button, styles.likeButton]} onPress={handleSwipeRight}>
+                <TouchableOpacity style={[styles.button, styles.likeButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]} onPress={handleSwipeRight}>
                     <Heart color="#4CD964" size={30} fill="#4CD964" />
                 </TouchableOpacity>
             </View>
@@ -153,15 +155,14 @@ function DraggableCard({ user, onSwipeRight, onSwipeLeft }: DraggableCardProps) 
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f8f9fa' },
+    container: { flex: 1 }, // Dynamic bg
     center: { justifyContent: 'center', alignItems: 'center' },
     header: {
         height: 60,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: '#eee'
+        // bg and border color handled inline
     },
     headerTitle: {
         fontSize: 24,
@@ -190,7 +191,6 @@ const styles = StyleSheet.create({
         width: 60,
         height: 60,
         borderRadius: 30,
-        backgroundColor: '#fff',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
@@ -198,24 +198,25 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 5,
         elevation: 3,
+        // bg handled inline
     },
     passButton: {
         borderWidth: 1,
-        borderColor: '#eee',
+        // border color handled inline
     },
     likeButton: {
         borderWidth: 1,
-        borderColor: '#eee',
+        // border color handled inline
     },
     noMoreText: {
         fontSize: 22,
         fontWeight: 'bold',
-        color: '#333',
         marginBottom: 10,
+        // color handled inline
     },
     subText: {
         fontSize: 16,
-        color: '#666',
+        // color handled inline
     },
     overlay: {
         position: 'absolute',

@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { User, Skill } from '../types';
 import { MapPin, Clock } from 'lucide-react-native';
+import { useTheme } from '../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.9;
@@ -14,9 +15,10 @@ interface SwipeCardProps {
 
 export default function SwipeCard({ user }: SwipeCardProps) {
     const primarySkill = user.skillsOffered[0];
+    const { colors } = useTheme();
 
     return (
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
             <Image source={{ uri: user.avatar }} style={styles.image} resizeMode="cover" />
 
             <LinearGradient

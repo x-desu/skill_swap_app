@@ -1,15 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, useColorScheme } from 'react-native';
-import { useStore } from '../store/useStore';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity } from 'react-native';
+import { useStore } from '../../src/store/useStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, Settings, Edit2 } from 'lucide-react-native';
-import { Colors } from '../constants/Colors';
+import { MapPin, Settings, Edit2, Moon, Sun, Smartphone } from 'lucide-react-native';
+import { useTheme } from '../../src/context/ThemeContext';
 
 export default function ProfileScreen() {
     const { currentUser } = useStore();
     const insets = useSafeAreaInsets();
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'light'];
+    const { colors, themeMode, setThemeMode, isDark } = useTheme();
 
     return (
         <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
@@ -25,26 +24,55 @@ export default function ProfileScreen() {
                 <Text style={[styles.name, { color: colors.text }]}>{currentUser.name}</Text>
 
                 <View style={styles.locationContainer}>
-                    <MapPin color="#666" size={14} />
-                    <Text style={styles.location}>{currentUser.location}</Text>
+                    <MapPin color={isDark ? '#ccc' : '#666'} size={14} />
+                    <Text style={[styles.location, { color: isDark ? '#ccc' : '#666' }]}>{currentUser.location}</Text>
                 </View>
 
-                <TouchableOpacity style={[styles.editButton, { backgroundColor: colorScheme === 'dark' ? '#333' : '#f0f0f0' }]}>
+                <TouchableOpacity style={[styles.editButton, { backgroundColor: isDark ? '#333' : '#f0f0f0' }]}>
                     <Edit2 color={colors.text} size={16} />
                     <Text style={[styles.editButtonText, { color: colors.text }]}>Edit Profile</Text>
                 </TouchableOpacity>
             </View>
 
             <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
+                <View style={[styles.themeSelector, { backgroundColor: isDark ? '#1E1E1E' : '#f0f0f0', borderColor: colors.border }]}>
+                    <TouchableOpacity
+                        style={[styles.themeOption, themeMode === 'light' && styles.themeActive]}
+                        onPress={() => setThemeMode('light')}
+                    >
+                        <Sun color={themeMode === 'light' ? '#000' : '#999'} size={20} />
+                        <Text style={[styles.themeText, { color: themeMode === 'light' ? '#000' : '#999' }]}>Light</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.themeOption, themeMode === 'dark' && styles.themeActive]}
+                        onPress={() => setThemeMode('dark')}
+                    >
+                        <Moon color={themeMode === 'dark' ? '#000' : '#999'} size={20} />
+                        <Text style={[styles.themeText, { color: themeMode === 'dark' ? '#000' : '#999' }]}>Dark</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.themeOption, themeMode === 'system' && styles.themeActive]}
+                        onPress={() => setThemeMode('system')}
+                    >
+                        <Smartphone color={themeMode === 'system' ? '#000' : '#999'} size={20} />
+                        <Text style={[styles.themeText, { color: themeMode === 'system' ? '#000' : '#999' }]}>System</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+
+            <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>About Me</Text>
-                <Text style={[styles.bio, { color: colorScheme === 'dark' ? '#ccc' : '#555' }]}>{currentUser.bio}</Text>
+                <Text style={[styles.bio, { color: isDark ? '#ccc' : '#555' }]}>{currentUser.bio}</Text>
             </View>
 
             <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Skills I Offer</Text>
                 <View style={styles.skillsContainer}>
                     {currentUser.skillsOffered.map(skill => (
-                        <View key={skill.id} style={[styles.skillChip, { backgroundColor: colorScheme === 'dark' ? '#333' : '#333' }]}>
+                        <View key={skill.id} style={[styles.skillChip, { backgroundColor: isDark ? '#333' : '#333' }]}>
                             <Text style={styles.skillText}>{skill.title}</Text>
                             <Text style={styles.skillCost}>{skill.cost} cr/hr</Text>
                         </View>
@@ -59,7 +87,7 @@ export default function ProfileScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Skills I Need</Text>
                 <View style={styles.skillsContainer}>
                     {currentUser.skillsNeeded.map((skill, index) => (
-                        <View key={index} style={[styles.skillChip, styles.neededChip, { backgroundColor: colorScheme === 'dark' ? '#333' : '#f0f0f0' }]}>
+                        <View key={index} style={[styles.skillChip, styles.neededChip, { backgroundColor: isDark ? '#333' : '#f0f0f0' }]}>
                             <Text style={[styles.skillText, styles.neededText, { color: colors.text }]}>{skill}</Text>
                         </View>
                     ))}
@@ -134,6 +162,34 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         // color handled inline
         marginBottom: 10,
+    },
+    themeSelector: {
+        flexDirection: 'row',
+        borderRadius: 15,
+        padding: 4,
+        borderWidth: 1,
+        // bg/border handled inline
+    },
+    themeOption: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        borderRadius: 12,
+    },
+    themeActive: {
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    themeText: {
+        marginLeft: 6,
+        fontWeight: '600',
+        fontSize: 14,
     },
     bio: {
         fontSize: 16,

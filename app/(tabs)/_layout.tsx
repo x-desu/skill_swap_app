@@ -2,12 +2,10 @@ import React from 'react';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import { Home, MessageSquare, Wallet, User as UserIcon } from 'lucide-react-native';
-import { useColorScheme } from 'react-native';
-import { Colors } from '../../src/constants/Colors';
+import { useTheme } from '../../src/context/ThemeContext';
 
 export default function TabLayout() {
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'light'];
+    const { colors, isDark } = useTheme();
 
     return (
         <Tabs
@@ -25,7 +23,7 @@ export default function TabLayout() {
                     <BlurView
                         intensity={80}
                         style={{ flex: 1 }}
-                        tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                        tint={isDark ? 'dark' : 'light'}
                     />
                 ),
                 tabBarActiveTintColor: colors.tabIconSelected,

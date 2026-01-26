@@ -4,11 +4,13 @@ import { useRouter } from 'expo-router';
 import { useStore } from '../../src/store/useStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare } from 'lucide-react-native';
+import { useTheme } from '../../src/context/ThemeContext';
 
 export default function MatchesScreen() {
     const { matches, users, currentUser } = useStore();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
 
     const getOtherUser = (match: any) => {
         const otherId = match.users.find((id: string) => id !== currentUser.id);
@@ -25,7 +27,7 @@ export default function MatchesScreen() {
 
         return (
             <TouchableOpacity
-                style={styles.matchItem}
+                style={[styles.matchItem, { borderBottomColor: colors.border }]}
                 onPress={() => router.push({
                     pathname: '/chat/[id]',
                     params: { id: item.id }
@@ -33,7 +35,7 @@ export default function MatchesScreen() {
             >
                 <Image source={{ uri: otherUser.avatar }} style={styles.avatar} />
                 <View style={styles.info}>
-                    <Text style={styles.name}>{otherUser.name}</Text>
+                    <Text style={[styles.name, { color: colors.text }]}>{otherUser.name}</Text>
                     <Text style={styles.subtext}>Matched {new Date(item.createdAt).toLocaleDateString()}</Text>
                 </View>
                 <MessageSquare color="#ccc" size={24} />
@@ -42,16 +44,16 @@ export default function MatchesScreen() {
     };
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-            <Text style={styles.title}>Matches</Text>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: colors.background }]}>
+            <Text style={[styles.title, { color: colors.text }]}>Matches</Text>
 
             {matches.length === 0 ? (
                 <View style={styles.emptyState}>
                     <Image
                         source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4076/4076549.png' }}
-                        style={styles.emptyImage}
+                        style={[styles.emptyImage, { tintColor: colors.tabIconDefault }]}
                     />
-                    <Text style={styles.emptyText}>No matches yet</Text>
+                    <Text style={[styles.emptyText, { color: colors.text }]}>No matches yet</Text>
                     <Text style={styles.emptySub}>Start swiping to find neighbors!</Text>
                 </View>
             ) : (
@@ -67,13 +69,13 @@ export default function MatchesScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1 }, // Dynamic bg
     title: {
         fontSize: 28,
         fontWeight: 'bold',
         marginLeft: 20,
         marginBottom: 20,
-        color: '#333'
+        // color handled inline
     },
     list: {
         paddingHorizontal: 20,
@@ -83,7 +85,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 15,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        // border color handled inline
     },
     avatar: {
         width: 60,
@@ -97,7 +99,7 @@ const styles = StyleSheet.create({
     name: {
         fontSize: 18,
         fontWeight: '600',
-        color: '#333',
+        // color handled inline
     },
     subtext: {
         fontSize: 14,
@@ -119,7 +121,7 @@ const styles = StyleSheet.create({
     emptyText: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#333',
+        // color handled inline
         marginTop: 10,
     },
     emptySub: {

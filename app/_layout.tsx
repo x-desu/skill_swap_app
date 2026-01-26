@@ -1,10 +1,10 @@
 import { Stack } from 'expo-router';
 import { useColorScheme } from 'react-native';
 import { Colors } from '../src/constants/Colors';
+import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 
-export default function RootLayout() {
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'light'];
+function RootLayoutNav() {
+    const { colors } = useTheme();
 
     return (
         <Stack
@@ -24,5 +24,13 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="chat/[id]" options={{ title: 'Chat', headerShown: true }} />
         </Stack>
+    );
+}
+
+export default function RootLayout() {
+    return (
+        <ThemeProvider>
+            <RootLayoutNav />
+        </ThemeProvider>
     );
 }

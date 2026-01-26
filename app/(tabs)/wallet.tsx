@@ -3,16 +3,18 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { useStore } from '../../src/store/useStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Clock, TrendingUp, TrendingDown, Plus } from 'lucide-react-native';
+import { useTheme } from '../../src/context/ThemeContext';
 
 export default function WalletScreen() {
     const { currentUser } = useStore();
     const insets = useSafeAreaInsets();
+    const { colors, isDark } = useTheme();
 
     return (
-        <ScrollView style={[styles.container, { paddingTop: insets.top }]}>
-            <Text style={styles.title}>Wallet</Text>
+        <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: colors.background }]}>
+            <Text style={[styles.title, { color: colors.text }]}>Wallet</Text>
 
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: isDark ? '#1E1E1E' : '#333' }]}>
                 <Text style={styles.cardLabel}>Available Balance</Text>
                 <View style={styles.balanceRow}>
                     <Clock color="#fff" size={32} />
@@ -27,37 +29,37 @@ export default function WalletScreen() {
                 <Text style={styles.addButtonText}>Buy More Credits</Text>
             </TouchableOpacity>
 
-            <Text style={styles.sectionTitle}>History</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>History</Text>
 
             {/* Mock Transactions */}
             <View style={styles.transaction}>
-                <View style={[styles.iconBox, { backgroundColor: '#E8F5E9' }]}>
+                <View style={[styles.iconBox, { backgroundColor: isDark ? '#1a3320' : '#E8F5E9' }]}>
                     <TrendingUp color="#4CD964" size={24} />
                 </View>
                 <View style={styles.transInfo}>
-                    <Text style={styles.transTitle}>Gardening Help</Text>
+                    <Text style={[styles.transTitle, { color: colors.text }]}>Gardening Help</Text>
                     <Text style={styles.transDate}>Yesterday</Text>
                 </View>
                 <Text style={styles.transAmountPositive}>+2.0</Text>
             </View>
 
             <View style={styles.transaction}>
-                <View style={[styles.iconBox, { backgroundColor: '#FFEBEE' }]}>
+                <View style={[styles.iconBox, { backgroundColor: isDark ? '#332020' : '#FFEBEE' }]}>
                     <TrendingDown color="#FF5A5F" size={24} />
                 </View>
                 <View style={styles.transInfo}>
-                    <Text style={styles.transTitle}>French Lesson</Text>
+                    <Text style={[styles.transTitle, { color: colors.text }]}>French Lesson</Text>
                     <Text style={styles.transDate}>Last Week</Text>
                 </View>
-                <Text style={styles.transAmountNegative}>-1.0</Text>
+                <Text style={[styles.transAmountNegative, { color: colors.text }]}>-1.0</Text>
             </View>
 
             <View style={styles.transaction}>
-                <View style={[styles.iconBox, { backgroundColor: '#E3F2FD' }]}>
+                <View style={[styles.iconBox, { backgroundColor: isDark ? '#1a2833' : '#E3F2FD' }]}>
                     <Plus color="#2196F3" size={24} />
                 </View>
                 <View style={styles.transInfo}>
-                    <Text style={styles.transTitle}>Welcome Bonus</Text>
+                    <Text style={[styles.transTitle, { color: colors.text }]}>Welcome Bonus</Text>
                     <Text style={styles.transDate}>Jan 20</Text>
                 </View>
                 <Text style={styles.transAmountPositive}>+3.0</Text>
@@ -68,15 +70,15 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 20 },
+    container: { flex: 1, paddingHorizontal: 20 }, // Dynamic bg
     title: {
         fontSize: 28,
         fontWeight: 'bold',
         marginBottom: 20,
-        color: '#333'
+        // color handled inline
     },
     card: {
-        backgroundColor: '#333',
+        // bg handled inline
         borderRadius: 20,
         padding: 25,
         marginBottom: 20,
@@ -130,7 +132,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#333',
+        // color handled inline
         marginBottom: 15,
     },
     transaction: {
@@ -146,6 +148,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 15,
+        // bg handled inline
     },
     transInfo: {
         flex: 1,
@@ -153,7 +156,7 @@ const styles = StyleSheet.create({
     transTitle: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#333',
+        // color handled inline
     },
     transDate: {
         fontSize: 12,
@@ -168,6 +171,6 @@ const styles = StyleSheet.create({
     transAmountNegative: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#333',
+        // color handled inline
     },
 });

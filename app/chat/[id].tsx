@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, useColorScheme } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useStore } from '../../src/store/useStore';
 import { Send } from 'lucide-react-native';
-import { Colors } from '../../src/constants/Colors';
+import { useTheme } from '../../src/context/ThemeContext';
 
 export default function ChatScreen() {
     const { id } = useLocalSearchParams();
@@ -11,8 +11,7 @@ export default function ChatScreen() {
 
     const { messages, sendMessage, currentUser } = useStore();
     const [text, setText] = useState('');
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'light'];
+    const { colors, isDark } = useTheme();
 
     const chatMessages = messages.filter(m => m.matchId === matchId);
 
@@ -60,7 +59,7 @@ export default function ChatScreen() {
 
             <View style={[styles.inputContainer, { backgroundColor: colors.headerBackground, borderTopColor: colors.border }]}>
                 <TextInput
-                    style={[styles.input, { backgroundColor: colorScheme === 'dark' ? '#333' : '#f9f9f9', color: colors.text }]}
+                    style={[styles.input, { backgroundColor: isDark ? '#333' : '#f9f9f9', color: colors.text }]}
                     value={text}
                     onChangeText={setText}
                     placeholder="Type a message..."

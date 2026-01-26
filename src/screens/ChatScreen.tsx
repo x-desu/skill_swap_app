@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, useColorScheme } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { useStore } from '../store/useStore';
 import { Send } from 'lucide-react-native';
+import { Colors } from '../constants/Colors';
 
 export default function ChatScreen() {
     const route = useRoute<any>();
     const { matchId, user } = route.params; // The other user
     const { messages, sendMessage, currentUser } = useStore();
     const [text, setText] = useState('');
+    const colorScheme = useColorScheme();
+    const colors = Colors[colorScheme ?? 'light'];
 
     const chatMessages = messages.filter(m => m.matchId === matchId);
 
@@ -22,8 +25,14 @@ export default function ChatScreen() {
         const isMe = item.senderId === currentUser.id;
         return (
             <View style={[styles.bubbleWrapper, isMe ? styles.myBubbleWrapper : styles.theirBubbleWrapper]}>
-                <View style={[styles.bubble, isMe ? styles.myBubble : styles.theirBubble]}>
-                    <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
+                <View style={[
+                    styles.bubble,
+                    isMe ? styles.myBubble : [styles.theirBubble, { backgroundColor: colors.cardBackground, borderColor: colors.border }]
+                ]}>
+                    <Text style={[
+                        styles.messageText,
+                        isMe ? styles.myMessageText : { color: colors.text }
+                    ]}>
                         {item.text}
                     </Text>
                 </View>
@@ -36,7 +45,7 @@ export default function ChatScreen() {
 
     return (
         <KeyboardAvoidingView
-            style={styles.container}
+            style={[styles.container, { backgroundColor: colors.background }]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={90}
         >
@@ -45,14 +54,12 @@ export default function ChatScreen() {
                 keyExtractor={item => item.id}
                 renderItem={renderMessage}
                 contentContainerStyle={styles.list}
-                inverted={false} // We want normal order? Usually Top to Bottom.
-            // If we want newest at bottom, we render normally and rely on scroll or inverted list.
-            // Let's just stick to normal for now.
+                inverted={false}
             />
 
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, { backgroundColor: colors.headerBackground, borderTopColor: colors.border }]}>
                 <TextInput
-                    style={styles.input}
+                    style={[styles.input, { backgroundColor: colorScheme === 'dark' ? '#333' : '#f9f9f9', color: colors.text }]}
                     value={text}
                     onChangeText={setText}
                     placeholder="Type a message..."
@@ -67,7 +74,7 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f5f5f5' },
+    container: { flex: 1 }, // Dynamic bg
     list: { padding: 20 },
     bubbleWrapper: {
         marginBottom: 15,
@@ -91,10 +98,10 @@ const styles = StyleSheet.create({
         borderBottomRightRadius: 4,
     },
     theirBubble: {
-        backgroundColor: '#fff',
+        // dynamic bg handled inline
         borderBottomLeftRadius: 4,
         borderWidth: 1,
-        borderColor: '#e0e0e0',
+        // dynamic border color handled inline
     },
     messageText: {
         fontSize: 16,
@@ -103,9 +110,7 @@ const styles = StyleSheet.create({
     myMessageText: {
         color: '#fff',
     },
-    theirMessageText: {
-        color: '#333',
-    },
+    // theirMessageText handled inline
     timestamp: {
         fontSize: 10,
         color: '#999',
@@ -115,20 +120,20 @@ const styles = StyleSheet.create({
     inputContainer: {
         flexDirection: 'row',
         padding: 10,
-        backgroundColor: '#fff',
+        // bg handled inline
         alignItems: 'center',
         borderTopWidth: 1,
-        borderTopColor: '#e0e0e0',
+        // border color handled inline
     },
     input: {
         flex: 1,
-        backgroundColor: '#f9f9f9',
+        // bg handled inline
         borderRadius: 20,
         paddingHorizontal: 15,
         paddingVertical: 10,
         fontSize: 16,
         marginRight: 10,
-        color: '#333',
+        // color handled inline
     },
     sendButton: {
         width: 44,
