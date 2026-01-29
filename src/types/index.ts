@@ -4,6 +4,7 @@ export interface Skill {
     category: string;
     description: string;
     cost: number; // in time credits
+    color?: string; // Optional color for the skill category
 }
 
 export interface User {
@@ -13,9 +14,15 @@ export interface User {
     bio: string;
     location: string;
     credits: number;
+    profileColor?: string;
     skillsOffered: Skill[];
     skillsNeeded: string[]; // Just titles for now
     isVerified?: boolean;
+    followersCount?: number;
+    followingCount?: number;
+    completedSessions?: number;
+    creditsEarned?: number;
+    creditsSpent?: number;
 }
 
 export interface Match {

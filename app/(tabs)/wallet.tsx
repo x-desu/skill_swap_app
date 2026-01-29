@@ -4,15 +4,21 @@ import { useStore } from '../../src/store/useStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Clock, TrendingUp, TrendingDown, Plus } from 'lucide-react-native';
 import { useTheme } from '../../src/context/ThemeContext';
+import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
+import { getProfileBaseColor } from '../../src/utils/colorUtils';
 
 export default function WalletScreen() {
-    const { currentUser } = useStore();
+    const { currentUser, transactions, addCredits } = useStore();
     const insets = useSafeAreaInsets();
     const { colors, isDark } = useTheme();
 
+    const baseColor = getProfileBaseColor(currentUser);
+    const seedKey = `tab:wallet:${currentUser.id}`;
+
     return (
-        <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: colors.background }]}>
-            <Text style={[styles.title, { color: colors.text }]}>Wallet</Text>
+        <ProfileGlowBackground baseColor={baseColor} seedKey={seedKey}>
+            <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: 'transparent' }]}>
+                <Text style={[styles.title, { color: colors.text }]}>Wallet</Text>
 
             <View style={[styles.card, { backgroundColor: isDark ? '#1E1E1E' : '#333' }]}>
                 <Text style={styles.cardLabel}>Available Balance</Text>
@@ -24,48 +30,47 @@ export default function WalletScreen() {
                 <Text style={styles.subText}>1 Credit ≈ 1 Hour of Service</Text>
             </View>
 
-            <TouchableOpacity style={styles.addButton}>
+            <TouchableOpacity style={styles.addButton} onPress={() => addCredits(1, 'Purchased credits')}>
                 <Plus color="#fff" size={20} />
                 <Text style={styles.addButtonText}>Buy More Credits</Text>
             </TouchableOpacity>
 
             <Text style={[styles.sectionTitle, { color: colors.text }]}>History</Text>
 
-            {/* Mock Transactions */}
-            <View style={styles.transaction}>
-                <View style={[styles.iconBox, { backgroundColor: isDark ? '#1a3320' : '#E8F5E9' }]}>
-                    <TrendingUp color="#4CD964" size={24} />
-                </View>
-                <View style={styles.transInfo}>
-                    <Text style={[styles.transTitle, { color: colors.text }]}>Gardening Help</Text>
-                    <Text style={styles.transDate}>Yesterday</Text>
-                </View>
-                <Text style={styles.transAmountPositive}>+2.0</Text>
-            </View>
+            {transactions.length === 0 ? (
+                <Text style={[styles.emptyText, { color: colors.text }]}>No transactions yet</Text>
+            ) : (
+                transactions.map((tx) => {
+                    const isEarn = tx.type === 'earn';
+                    const amountText = `${isEarn ? '+' : '-'}${tx.amount.toFixed(1)}`;
+                    const dateLabel = new Date(tx.date).toLocaleDateString();
+                    const iconBg = isEarn
+                        ? (isDark ? '#1a3320' : '#E8F5E9')
+                        : (isDark ? '#332020' : '#FFEBEE');
 
-            <View style={styles.transaction}>
-                <View style={[styles.iconBox, { backgroundColor: isDark ? '#332020' : '#FFEBEE' }]}>
-                    <TrendingDown color="#FF5A5F" size={24} />
-                </View>
-                <View style={styles.transInfo}>
-                    <Text style={[styles.transTitle, { color: colors.text }]}>French Lesson</Text>
-                    <Text style={styles.transDate}>Last Week</Text>
-                </View>
-                <Text style={[styles.transAmountNegative, { color: colors.text }]}>-1.0</Text>
-            </View>
+                    return (
+                        <View key={tx.id} style={styles.transaction}>
+                            <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
+                                {isEarn ? (
+                                    <TrendingUp color="#4CD964" size={24} />
+                                ) : (
+                                    <TrendingDown color="#FF5A5F" size={24} />
+                                )}
+                            </View>
+                            <View style={styles.transInfo}>
+                                <Text style={[styles.transTitle, { color: colors.text }]}>{tx.description}</Text>
+                                <Text style={styles.transDate}>{dateLabel}</Text>
+                            </View>
+                            <Text style={isEarn ? styles.transAmountPositive : [styles.transAmountNegative, { color: colors.text }]}>
+                                {amountText}
+                            </Text>
+                        </View>
+                    );
+                })
+            )}
 
-            <View style={styles.transaction}>
-                <View style={[styles.iconBox, { backgroundColor: isDark ? '#1a2833' : '#E3F2FD' }]}>
-                    <Plus color="#2196F3" size={24} />
-                </View>
-                <View style={styles.transInfo}>
-                    <Text style={[styles.transTitle, { color: colors.text }]}>Welcome Bonus</Text>
-                    <Text style={styles.transDate}>Jan 20</Text>
-                </View>
-                <Text style={styles.transAmountPositive}>+3.0</Text>
-            </View>
-
-        </ScrollView>
+            </ScrollView>
+        </ProfileGlowBackground>
     );
 }
 
@@ -134,6 +139,11 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         // color handled inline
         marginBottom: 15,
+    },
+    emptyText: {
+        fontSize: 14,
+        color: '#888',
+        marginTop: 8,
     },
     transaction: {
         flexDirection: 'row',

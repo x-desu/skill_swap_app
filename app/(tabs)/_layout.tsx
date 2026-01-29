@@ -1,7 +1,7 @@
 import React from 'react';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
-import { Home, MessageSquare, Wallet, User as UserIcon } from 'lucide-react-native';
+import { Home, Compass, MessageSquare, Wallet, User as UserIcon } from 'lucide-react-native';
 import { useTheme } from '../../src/context/ThemeContext';
 
 export default function TabLayout() {
@@ -33,8 +33,15 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="index"
                 options={{
-                    title: 'Discover',
+                    title: 'Home',
                     tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
+                }}
+            />
+            <Tabs.Screen
+                name="discover"
+                options={{
+                    title: 'Discover',
+                    tabBarIcon: ({ color, size }) => <Compass color={color} size={size} />,
                 }}
             />
             <Tabs.Screen

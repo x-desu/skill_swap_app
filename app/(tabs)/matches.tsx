@@ -5,12 +5,17 @@ import { useStore } from '../../src/store/useStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare } from 'lucide-react-native';
 import { useTheme } from '../../src/context/ThemeContext';
+import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
+import { getProfileBaseColor } from '../../src/utils/colorUtils';
 
 export default function MatchesScreen() {
     const { matches, users, currentUser } = useStore();
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
+
+    const baseColor = getProfileBaseColor(currentUser);
+    const seedKey = `tab:matches:${currentUser.id}`;
 
     const getOtherUser = (match: any) => {
         const otherId = match.users.find((id: string) => id !== currentUser.id);
@@ -44,27 +49,29 @@ export default function MatchesScreen() {
     };
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: colors.background }]}>
-            <Text style={[styles.title, { color: colors.text }]}>Matches</Text>
+        <ProfileGlowBackground baseColor={baseColor} seedKey={seedKey}>
+            <View style={[styles.container, { paddingTop: insets.top, paddingBottom: 90 }]}>
+                <Text style={[styles.title, { color: colors.text }]}>Matches</Text>
 
-            {matches.length === 0 ? (
-                <View style={styles.emptyState}>
-                    <Image
-                        source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4076/4076549.png' }}
-                        style={[styles.emptyImage, { tintColor: colors.tabIconDefault }]}
+                {matches.length === 0 ? (
+                    <View style={styles.emptyState}>
+                        <Image
+                            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/4076/4076549.png' }}
+                            style={[styles.emptyImage, { tintColor: colors.tabIconDefault }]}
+                        />
+                        <Text style={[styles.emptyText, { color: colors.text }]}>No matches yet</Text>
+                        <Text style={styles.emptySub}>Start swiping to find neighbors!</Text>
+                    </View>
+                ) : (
+                    <FlatList
+                        data={matches}
+                        keyExtractor={item => item.id}
+                        renderItem={renderItem}
+                        contentContainerStyle={styles.list}
                     />
-                    <Text style={[styles.emptyText, { color: colors.text }]}>No matches yet</Text>
-                    <Text style={styles.emptySub}>Start swiping to find neighbors!</Text>
-                </View>
-            ) : (
-                <FlatList
-                    data={matches}
-                    keyExtractor={item => item.id}
-                    renderItem={renderItem}
-                    contentContainerStyle={styles.list}
-                />
-            )}
-        </View>
+                )}
+            </View>
+        </ProfileGlowBackground>
     );
 }
 

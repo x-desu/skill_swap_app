@@ -1,9 +1,10 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { User, Skill } from '../types';
+import { User } from '../types';
 import { MapPin, Clock } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
+import { generateGradient, getRandomThemeColor } from '../utils/colorUtils';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.9;
@@ -22,15 +23,22 @@ export default function SwipeCard({ user }: SwipeCardProps) {
             <Image source={{ uri: user.avatar }} style={styles.image} resizeMode="cover" />
 
             <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.8)']}
+                colors={['transparent', 'rgba(0,0,0,0.9)']}
                 style={styles.gradient}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
             >
                 <View style={styles.content}>
                     <View style={styles.header}>
                         <Text style={styles.name}>{user.name}</Text>
-                        <View style={styles.badge}>
+                        <LinearGradient 
+                            colors={generateGradient(primarySkill.color || getRandomThemeColor(), 3)}
+                            style={styles.badge}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                        >
                             <Text style={styles.badgeText}>{primarySkill.category}</Text>
-                        </View>
+                        </LinearGradient>
                     </View>
 
                     <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
@@ -100,10 +108,12 @@ const styles = StyleSheet.create({
         color: '#fff',
     },
     badge: {
-        backgroundColor: '#FF5A5F',
         paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
+        paddingVertical: 4,
+        borderRadius: 12,
+        marginLeft: 8,
+        minWidth: 60,
+        alignItems: 'center',
     },
     badgeText: {
         color: '#fff',

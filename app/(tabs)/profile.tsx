@@ -4,20 +4,32 @@ import { useStore } from '../../src/store/useStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Settings, Edit2, Moon, Sun, Smartphone } from 'lucide-react-native';
 import { useTheme } from '../../src/context/ThemeContext';
+import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
+import { getProfileBaseColor } from '../../src/utils/colorUtils';
 
 export default function ProfileScreen() {
     const { currentUser } = useStore();
     const insets = useSafeAreaInsets();
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
 
+    const baseColor = getProfileBaseColor(currentUser);
+    const seedKey = `tab:profile:${currentUser.id}`;
+
+    const followers = currentUser.followersCount ?? 0;
+    const following = currentUser.followingCount ?? 0;
+    const sessions = currentUser.completedSessions ?? 0;
+    const creditsEarned = currentUser.creditsEarned ?? 0;
+    const creditsSpent = currentUser.creditsSpent ?? 0;
+
     return (
-        <ScrollView style={[styles.container, { paddingBottom: 90, backgroundColor: colors.background }]} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
-            <View style={styles.header}>
-                <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
-                <TouchableOpacity>
-                    <Settings color={colors.text} size={24} />
-                </TouchableOpacity>
-            </View>
+        <ProfileGlowBackground baseColor={baseColor} seedKey={seedKey}>
+            <ScrollView style={[styles.container, { paddingBottom: 90, backgroundColor: 'transparent' }]} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
+                <View style={styles.header}>
+                    <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
+                    <TouchableOpacity>
+                        <Settings color={colors.text} size={24} />
+                    </TouchableOpacity>
+                </View>
 
             <View style={styles.profileHeader}>
                 <Image source={{ uri: currentUser.avatar }} style={styles.avatar} />
@@ -32,6 +44,32 @@ export default function ProfileScreen() {
                     <Edit2 color={colors.text} size={16} />
                     <Text style={[styles.editButtonText, { color: colors.text }]}>Edit Profile</Text>
                 </TouchableOpacity>
+
+                <View style={[styles.statsRow, { borderColor: colors.border }]}>
+                    <View style={styles.statItem}>
+                        <Text style={[styles.statNumber, { color: colors.text }]}>{followers}</Text>
+                        <Text style={styles.statLabel}>Followers</Text>
+                    </View>
+                    <View style={styles.statItem}>
+                        <Text style={[styles.statNumber, { color: colors.text }]}>{following}</Text>
+                        <Text style={styles.statLabel}>Following</Text>
+                    </View>
+                    <View style={styles.statItem}>
+                        <Text style={[styles.statNumber, { color: colors.text }]}>{sessions}</Text>
+                        <Text style={styles.statLabel}>Sessions</Text>
+                    </View>
+                </View>
+
+                <View style={styles.statsRowSecondary}>
+                    <View style={styles.statItemSecondary}>
+                        <Text style={styles.statSecondaryLabel}>Credits earned</Text>
+                        <Text style={[styles.statSecondaryValue, { color: colors.text }]}>{creditsEarned.toFixed(1)}</Text>
+                    </View>
+                    <View style={styles.statItemSecondary}>
+                        <Text style={styles.statSecondaryLabel}>Credits spent</Text>
+                        <Text style={[styles.statSecondaryValue, { color: colors.text }]}>{creditsSpent.toFixed(1)}</Text>
+                    </View>
+                </View>
             </View>
 
             <View style={styles.section}>
@@ -97,7 +135,8 @@ export default function ProfileScreen() {
                 </View>
             </View>
 
-        </ScrollView>
+            </ScrollView>
+        </ProfileGlowBackground>
     );
 }
 
@@ -153,6 +192,47 @@ const styles = StyleSheet.create({
         marginLeft: 8,
         fontWeight: '600',
         // color handled inline
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 20,
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 16,
+        borderWidth: 1,
+    },
+    statItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    statNumber: {
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    statLabel: {
+        fontSize: 12,
+        color: '#888',
+    },
+    statsRowSecondary: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 12,
+        paddingHorizontal: 10,
+    },
+    statItemSecondary: {
+        flex: 1,
+    },
+    statSecondaryLabel: {
+        fontSize: 11,
+        color: '#888',
+        marginBottom: 2,
+    },
+    statSecondaryValue: {
+        fontSize: 14,
+        fontWeight: '600',
     },
     section: {
         marginBottom: 25,
