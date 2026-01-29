@@ -27,10 +27,15 @@ function RootLayoutNav() {
     );
 }
 
+import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider';
+import "../global.css";
+
 export default function RootLayout() {
     return (
-        <ThemeProvider>
-            <RootLayoutNav />
-        </ThemeProvider>
+        <GluestackUIProvider mode="light">
+            <ThemeProvider>
+                <RootLayoutNav />
+            </ThemeProvider>
+        </GluestackUIProvider>
     );
 }
