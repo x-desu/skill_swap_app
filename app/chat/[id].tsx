@@ -1,146 +1,231 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { useStore } from '../../src/store/useStore';
-import { Send } from 'lucide-react-native';
-import { useTheme } from '../../src/context/ThemeContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { GiftedChat, Bubble, Send, InputToolbar } from 'react-native-gifted-chat';
+import { useSelector } from 'react-redux';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronLeft } from 'lucide-react-native';
 
-export default function ChatScreen() {
-    const { id } = useLocalSearchParams();
-    const matchId = Array.isArray(id) ? id[0] : id;
+import type { RootState } from '../../src/store';
+import { sendMessage, listenToMessages } from '../../src/services/chatService';
+import type { MessageDocument } from '../../src/types/user';
+import UserAvatar from '../../src/components/UserAvatar';
 
-    const { messages, sendMessage, currentUser } = useStore();
-    const [text, setText] = useState('');
-    const { colors, isDark } = useTheme();
+const COLORS = {
+  rosePrimary: '#ff1a5c',
+  bgDark: '#1a0505',
+  bgBase: '#0d0202',
+  bubbleRight: '#ff1a5c',
+  bubbleLeft: 'rgba(255, 255, 255, 0.1)',
+  textPrimary: '#ffffff',
+  textSecondary: 'rgba(255, 255, 255, 0.7)',
+  borderLight: 'rgba(255, 255, 255, 0.1)',
+};
 
-    const chatMessages = messages.filter(m => m.matchId === matchId);
+export default function ChatRoomScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
+  const authUser = useSelector((state: RootState) => state.auth.user);
 
-    const handleSend = () => {
-        if (text.trim().length === 0) return;
-        sendMessage(matchId, text);
-        setText('');
-    };
+  const matchId = params.id as string;
+  const targetUid = params.targetUid as string;
+  // If coming from Match Celebration, we have name & photo. Otherwise just UID.
+  const targetName = (params.name as string) || `Match (${targetUid?.slice(0, 4)}...)`;
+  const targetPhoto = (params.photoURL as string) || '';
 
-    const renderMessage = ({ item }: { item: any }) => {
-        const isMe = item.senderId === currentUser.id;
-        return (
-            <View style={[styles.bubbleWrapper, isMe ? styles.myBubbleWrapper : styles.theirBubbleWrapper]}>
-                <View style={[
-                    styles.bubble,
-                    isMe ? styles.myBubble : [styles.theirBubble, { backgroundColor: colors.cardBackground, borderColor: colors.border }]
-                ]}>
-                    <Text style={[
-                        styles.messageText,
-                        isMe ? styles.myMessageText : { color: colors.text }
-                    ]}>
-                        {item.text}
-                    </Text>
-                </View>
-                <Text style={styles.timestamp}>
-                    {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-            </View>
-        );
-    };
+  const [messages, setMessages] = useState<MessageDocument[]>([]);
 
+  // ── Real-time Listener ──
+  // Mounts the Firestore read listener exactly when this screen opens.
+  // Automatically unsubscribes when this screen closes.
+  useEffect(() => {
+    if (!matchId) return;
+    
+    const unsubscribe = listenToMessages(matchId, (newMessages) => {
+      setMessages(newMessages);
+    });
+
+    return () => unsubscribe();
+  }, [matchId]);
+
+  const onSend = useCallback(
+    async (newMessages: MessageDocument[] = []) => {
+      if (!matchId || !authUser) return;
+
+      const messageToSave = newMessages[0];
+      if (!messageToSave) return;
+
+      // Optimistic update
+      setMessages((previousMessages) =>
+        GiftedChat.append(previousMessages, newMessages) as MessageDocument[]
+      );
+
+      // Write to Firestore
+      try {
+        await sendMessage(matchId, {
+          ...messageToSave,
+          user: {
+            _id: authUser.uid,
+            name: authUser.displayName || 'Me',
+            avatar: authUser.photoURL || undefined,
+          },
+        });
+      } catch (err) {
+        console.error('Failed to send message:', err);
+      }
+    },
+    [matchId, authUser]
+  );
+
+  // ── UI Customization ──
+
+  const renderBubble = (props: any) => {
     return (
-        <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: colors.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={90}
-        >
-            <FlatList
-                data={chatMessages}
-                keyExtractor={item => item.id}
-                renderItem={renderMessage}
-                contentContainerStyle={styles.list}
-                inverted={false}
-            />
-
-            <View style={[styles.inputContainer, { backgroundColor: colors.headerBackground, borderTopColor: colors.border }]}>
-                <TextInput
-                    style={[styles.input, { backgroundColor: isDark ? '#333' : '#f9f9f9', color: colors.text }]}
-                    value={text}
-                    onChangeText={setText}
-                    placeholder="Type a message..."
-                    placeholderTextColor="#999"
-                />
-                <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
-                    <Send color="#fff" size={20} />
-                </TouchableOpacity>
-            </View>
-        </KeyboardAvoidingView>
+      <Bubble
+        {...props}
+        wrapperStyle={{
+          right: {
+            backgroundColor: COLORS.bubbleRight,
+          },
+          left: {
+            backgroundColor: COLORS.bubbleLeft,
+          },
+        }}
+        textStyle={{
+          right: { color: COLORS.textPrimary },
+          left: { color: COLORS.textPrimary },
+        }}
+        timeTextStyle={{
+          right: { color: 'rgba(255,255,255,0.5)' },
+          left: { color: 'rgba(255,255,255,0.4)' },
+        }}
+      />
     );
+  };
+
+  const renderInputToolbar = (props: any) => {
+    return (
+      <InputToolbar
+        {...props}
+        containerStyle={{
+          backgroundColor: COLORS.bgDark,
+          borderTopColor: COLORS.borderLight,
+          borderTopWidth: 1,
+          paddingTop: 4,
+          paddingBottom: Math.max(insets.bottom, 8),
+        }}
+        primaryStyle={{ alignItems: 'center' }}
+      />
+    );
+  };
+
+  const renderSend = (props: any) => {
+    return (
+      <Send {...props} containerStyle={styles.sendContainer}>
+        <Text style={styles.sendText}>Send</Text>
+      </Send>
+    );
+  };
+
+  // Custom Header
+  const renderHeader = () => (
+    <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <ChevronLeft color={COLORS.textPrimary} size={28} />
+      </TouchableOpacity>
+      <View style={styles.headerInfo}>
+        <UserAvatar
+          uid={targetUid}
+          displayName={targetName}
+          photoURL={targetPhoto}
+          size={36}
+        />
+        <Text style={styles.headerName}>{targetName}</Text>
+      </View>
+    </View>
+  );
+
+  if (!authUser) return null;
+
+  return (
+    <View style={styles.container}>
+      {renderHeader()}
+      <View style={styles.chatContainer}>
+        <GiftedChat
+          messages={messages as any} // Cast needed due to strict IMessage typing vs Timestamp
+          onSend={(newMessages) => onSend(newMessages as MessageDocument[])}
+          user={{
+            _id: authUser.uid,
+            name: authUser.displayName || 'Me',
+            avatar: authUser.photoURL || undefined,
+          }}
+          renderBubble={renderBubble}
+          renderInputToolbar={renderInputToolbar}
+          renderSend={renderSend}
+          renderAvatarOnTop
+          showAvatarForEveryMessage={false}
+          bottomOffset={insets.bottom > 0 ? insets.bottom : 0}
+          textInputProps={{
+            style: styles.textInput,
+            placeholderTextColor: COLORS.textSecondary,
+          }}
+        />
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 }, // Dynamic bg
-    list: { padding: 20 },
-    bubbleWrapper: {
-        marginBottom: 15,
-        maxWidth: '80%',
-    },
-    myBubbleWrapper: {
-        alignSelf: 'flex-end',
-        alignItems: 'flex-end',
-    },
-    theirBubbleWrapper: {
-        alignSelf: 'flex-start',
-        alignItems: 'flex-start',
-    },
-    bubble: {
-        padding: 12,
-        borderRadius: 20,
-        minWidth: 60,
-    },
-    myBubble: {
-        backgroundColor: '#FF5A5F',
-        borderBottomRightRadius: 4,
-    },
-    theirBubble: {
-        // dynamic bg handled inline
-        borderBottomLeftRadius: 4,
-        borderWidth: 1,
-        // dynamic border color handled inline
-    },
-    messageText: {
-        fontSize: 16,
-        lineHeight: 22,
-    },
-    myMessageText: {
-        color: '#fff',
-    },
-    // theirMessageText handled inline
-    timestamp: {
-        fontSize: 10,
-        color: '#999',
-        marginTop: 4,
-        marginHorizontal: 4,
-    },
-    inputContainer: {
-        flexDirection: 'row',
-        padding: 10,
-        // bg handled inline
-        alignItems: 'center',
-        borderTopWidth: 1,
-        // border color handled inline
-    },
-    input: {
-        flex: 1,
-        // bg handled inline
-        borderRadius: 20,
-        paddingHorizontal: 15,
-        paddingVertical: 10,
-        fontSize: 16,
-        marginRight: 10,
-        // color handled inline
-    },
-    sendButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FF5A5F',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.bgBase,
+  },
+  chatContainer: {
+    flex: 1,
+    backgroundColor: COLORS.bgBase,
+  },
+  header: {
+    backgroundColor: COLORS.bgDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  backButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  headerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  sendContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  sendText: {
+    color: COLORS.rosePrimary,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  textInput: {
+    flex: 1,
+    color: '#fff',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    marginHorizontal: 12,
+    fontSize: 15,
+  },
 });

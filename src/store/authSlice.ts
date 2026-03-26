@@ -1,0 +1,179 @@
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import auth from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { appleAuth } from '@invertase/react-native-apple-authentication';
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  isAnonymous: boolean;
+}
+
+interface AuthState {
+  user: AuthUser | null;
+  isAuthenticated: boolean;
+  isProfileComplete: boolean;
+  isLoading: boolean;
+  error: string | null;
+  lastSignInMethod: 'google' | 'apple' | 'email' | 'anonymous' | null;
+}
+
+const initialState: AuthState = {
+  user: null,
+  isAuthenticated: false,
+  isProfileComplete: false,
+  isLoading: true,   // true until onAuthStateChanged fires for the first time
+  error: null,
+  lastSignInMethod: null,
+};
+
+// ── Async Thunks ─────────────────────────────────────────────────────────────
+
+export const signInWithGoogle = createAsyncThunk(
+  'auth/signInWithGoogle',
+  async (_, { rejectWithValue }) => {
+    try {
+      await GoogleSignin.hasPlayServices();
+      const { data } = await GoogleSignin.signIn();
+      const credential = auth.GoogleAuthProvider.credential(data!.idToken);
+      await auth().signInWithCredential(credential);
+      return 'google' as const;
+    } catch (e: any) {
+      return rejectWithValue(e.message ?? 'Google sign-in failed');
+    }
+  },
+);
+
+export const signInWithApple = createAsyncThunk(
+  'auth/signInWithApple',
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
+      });
+      const credential = auth.AppleAuthProvider.credential(
+        res.identityToken,
+        res.nonce,
+      );
+      await auth().signInWithCredential(credential);
+      return 'apple' as const;
+    } catch (e: any) {
+      return rejectWithValue(e.message ?? 'Apple sign-in failed');
+    }
+  },
+);
+
+export const signUpWithEmail = createAsyncThunk(
+  'auth/signUpWithEmail',
+  async (
+    { email, password }: { email: string; password: string },
+    { rejectWithValue },
+  ) => {
+    try {
+      await auth().createUserWithEmailAndPassword(email, password);
+      return 'email' as const;
+    } catch (e: any) {
+      return rejectWithValue(e.message ?? 'Sign up failed');
+    }
+  },
+);
+
+export const signInWithEmail = createAsyncThunk(
+  'auth/signInWithEmail',
+  async (
+    { email, password }: { email: string; password: string },
+    { rejectWithValue },
+  ) => {
+    try {
+      await auth().signInWithEmailAndPassword(email, password);
+      return 'email' as const;
+    } catch (e: any) {
+      return rejectWithValue(e.message ?? 'Sign in failed');
+    }
+  },
+);
+
+export const sendPasswordReset = createAsyncThunk(
+  'auth/sendPasswordReset',
+  async (email: string, { rejectWithValue }) => {
+    try {
+      await auth().sendPasswordResetEmail(email);
+    } catch (e: any) {
+      return rejectWithValue(e.message ?? 'Password reset failed');
+    }
+  },
+);
+
+export const signOut = createAsyncThunk(
+  'auth/signOut',
+  async (_, { rejectWithValue }) => {
+    try {
+      await auth().signOut();
+      try {
+        await GoogleSignin.signOut();
+      } catch (_) {
+        // not signed in with Google — fine to ignore
+      }
+    } catch (e: any) {
+      return rejectWithValue(e.message ?? 'Sign out failed');
+    }
+  },
+);
+
+// ── Slice ────────────────────────────────────────────────────────────────────
+
+const authSlice = createSlice({
+  name: 'auth',
+  initialState,
+  reducers: {
+    // Called by onAuthStateChanged in _layout.tsx — single source of truth
+    setUser(state, action: PayloadAction<AuthUser | null>) {
+      state.user = action.payload;
+      state.isAuthenticated = action.payload !== null;
+      state.isLoading = false;
+    },
+    setProfileComplete(state, action: PayloadAction<boolean>) {
+      state.isProfileComplete = action.payload;
+    },
+    clearError(state) {
+      state.error = null;
+    },
+  },
+  extraReducers: (builder) => {
+    const allThunks = [
+      signInWithGoogle,
+      signInWithApple,
+      signUpWithEmail,
+      signInWithEmail,
+      sendPasswordReset,
+      signOut,
+    ];
+
+    allThunks.forEach((thunk) => {
+      builder
+        .addCase(thunk.pending, (state) => {
+          state.isLoading = true;
+          state.error = null;
+        })
+        .addCase(thunk.rejected, (state, action) => {
+          state.isLoading = false;
+          state.error = action.payload as string;
+        })
+        .addCase(thunk.fulfilled, (state, action) => {
+          state.isLoading = false;
+          if (action.payload) {
+            state.lastSignInMethod = action.payload as AuthState['lastSignInMethod'];
+          }
+          // Actual user state set by onAuthStateChanged, not here
+        });
+    });
+  },
+});
+
+export const { setUser, setProfileComplete, clearError } = authSlice.actions;
+export default authSlice.reducer;

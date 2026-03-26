@@ -1,8 +1,9 @@
 import React, { useRef, useEffect } from 'react';
 import { View, TouchableOpacity, StyleSheet, Dimensions, Animated } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import { Home, Search, Heart, User } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
+import { useAuth } from '../../src/hooks/useAuth';
 
 const { width } = Dimensions.get('window');
 
@@ -125,6 +126,14 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 }
 
 export default function TabLayout() {
+    const { isAuthenticated } = useAuth();
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            router.replace('/(auth)/welcome');
+        }
+    }, [isAuthenticated]);
+
     return (
         <Tabs
             screenOptions={{ headerShown: false }}

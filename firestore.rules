@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isSwapParticipant(swapData) {
+      return isSignedIn() && (
+        request.auth.uid == swapData.fromUid ||
+        request.auth.uid == swapData.toUid
+      );
+    }
+
+    // ─── users/{uid} ─────────────────────────────────────────────────────────
+    // Any signed-in user can READ (needed for discovery feed).
+    // Only the owner can WRITE their own document (create or update).
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(uid);
+    }
+
+    // ─── swapRequests/{id} ───────────────────────────────────────────────────
+    match /swapRequests/{id} {
+      allow read: if isSwapParticipant(resource.data);
+
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.fromUid
+        && request.resource.data.status == 'pending';
+
+      allow update: if isSwapParticipant(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isSignedIn()
+        && request.auth.uid == resource.data.fromUid
+        && resource.data.status == 'pending';
+    }
+
+    // ─── skills/{id} ─────────────────────────────────────────────────────────
+    match /skills/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // ─── notifications/{uid}/items/{id} ──────────────────────────────────────
+    match /notifications/{uid}/items/{id} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ─── Deny all other paths ─────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -9,6 +9,10 @@ interface AppState {
     transactions: Transaction[];
     followingIds: string[]; // user ids current user is following
 
+    // App lifecycle
+    isInitialized: boolean;
+    setInitialized: (value: boolean) => void;
+
     // Actions
     swipeRight: (userId: string) => void;
     swipeLeft: (userId: string) => void;
@@ -97,6 +101,10 @@ export const useStore = create<AppState>((set, get) => ({
     messages: [],
     transactions: [],
     followingIds: [],
+
+    // App lifecycle
+    isInitialized: false,
+    setInitialized: (value) => set({ isInitialized: value }),
 
     swipeRight: (userId) => {
         // For demo: Always match if swipe right

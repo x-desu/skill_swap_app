@@ -1,16 +1,22 @@
 import React, { useRef, useState } from 'react';
 import {
-    View, Text, StyleSheet, Image, TouchableOpacity, Dimensions,
-    ScrollView, TextInput, Animated, NativeSyntheticEvent, NativeScrollEvent
+  View, Text, StyleSheet, TouchableOpacity, Dimensions,
+  ScrollView, TextInput, Animated, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-    Bell, Grid3X3, Search as SearchIcon, MapPin, Check,
-    Gift, ArrowLeftRight, Star
+  Bell, Grid3X3, Search as SearchIcon, MapPin, Check,
+  Gift, ArrowLeftRight, Star,
 } from 'lucide-react-native';
-import { useStore } from '../../src/store/useStore';
+import { useSelector } from 'react-redux';
+import { useRouter } from 'expo-router';
+import type { RootState } from '../../src/store';
+import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
+import { likeUser } from '../../src/services/matchingService';
+import UserAvatar from '../../src/components/UserAvatar';
+import type { UserDocument } from '../../src/types/user';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.78;
@@ -21,679 +27,425 @@ const SIDE_PADDING = (width - CARD_WIDTH) / 2;
 
 // Color Theme
 const COLORS = {
-    // Primary Rose
-    rosePrimary: '#ff1a5c',
-    roseLight: '#ff4d7a',
-    rose50: 'rgba(255, 26, 92, 0.5)',
-    rose30: 'rgba(255, 26, 92, 0.3)',
-    rose20: 'rgba(255, 26, 92, 0.2)',
-    // Backgrounds
-    bgDeep: '#2d0a0a',
-    bgDark: '#1a0505',
-    bgBase: '#0d0202',
-    // Glass
-    glass: 'rgba(45, 10, 10, 0.5)',
-    glass60: 'rgba(45, 10, 10, 0.6)',
-    // Borders
-    borderLight: 'rgba(255, 255, 255, 0.1)',
-    borderHover: 'rgba(255, 255, 255, 0.2)',
-    borderSubtle: 'rgba(255, 255, 255, 0.08)',
-    // Text
-    textPrimary: '#ffffff',
-    textSecondary: 'rgba(255, 255, 255, 0.7)',
-    textMuted: 'rgba(255, 255, 255, 0.4)',
-    // Status
-    success: '#34d399',
-    successBg: 'rgba(16, 185, 129, 0.2)',
-    warning: '#fbbf24',
-    warningBg: 'rgba(245, 158, 11, 0.2)',
+  rosePrimary: '#ff1a5c',
+  roseLight: '#ff4d7a',
+  rose50: 'rgba(255, 26, 92, 0.5)',
+  rose30: 'rgba(255, 26, 92, 0.3)',
+  rose20: 'rgba(255, 26, 92, 0.2)',
+  bgDeep: '#2d0a0a',
+  bgDark: '#1a0505',
+  bgBase: '#0d0202',
+  glass: 'rgba(45, 10, 10, 0.5)',
+  glass60: 'rgba(45, 10, 10, 0.6)',
+  borderLight: 'rgba(255, 255, 255, 0.1)',
+  borderHover: 'rgba(255, 255, 255, 0.2)',
+  borderSubtle: 'rgba(255, 255, 255, 0.08)',
+  textPrimary: '#ffffff',
+  textSecondary: 'rgba(255, 255, 255, 0.7)',
+  textMuted: 'rgba(255, 255, 255, 0.4)',
+  success: '#34d399',
+  successBg: 'rgba(16, 185, 129, 0.2)',
+  warning: '#fbbf24',
+  warningBg: 'rgba(245, 158, 11, 0.2)',
 };
 
-// Categories for filter pills
+// Category filter pills
 const categories = ['All', 'Tech', 'Music', 'Art', 'Language', 'Sports'];
 
-// Mock data for nearby people
-const nearbyPeople = [
-    {
-        id: '1',
-        name: 'Sarah Chen',
-        avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800',
-        distance: '0.8 mi',
-        rating: 4.9,
-        teach: 'UI Design',
-        learn: 'Python',
-    },
-    {
-        id: '2',
-        name: 'Marcus Johnson',
-        avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800',
-        distance: '1.2 mi',
-        rating: 4.7,
-        teach: 'Guitar',
-        learn: 'Photography',
-    },
-    {
-        id: '3',
-        name: 'Emily Wong',
-        avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=800',
-        distance: '2.1 mi',
-        rating: 5.0,
-        teach: 'French',
-        learn: 'Cooking',
-    },
-    {
-        id: '4',
-        name: 'David Kim',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800',
-        distance: '1.5 mi',
-        rating: 4.8,
-        teach: 'Coding',
-        learn: 'Dance',
-    },
-];
+const CATEGORY_SKILL_MAP: Record<string, string[]> = {
+  Tech: ['react', 'python', 'coding', 'ai', 'javascript', 'swift', 'flutter', 'design', 'excel'],
+  Music: ['guitar', 'piano', 'singing', 'dj', 'music'],
+  Art: ['drawing', 'painting', 'photography', 'video'],
+  Language: ['spanish', 'french', 'hindi', 'mandarin', 'english', 'writing'],
+  Sports: ['yoga', 'dance', 'football', 'cricket', 'swimming'],
+};
 
-// Animated Card Component with 3D rotation
+// ── Animated Card ──
 interface AnimatedCardProps {
-    person: typeof nearbyPeople[0];
-    index: number;
-    scrollX: Animated.Value;
+  person: UserDocument;
+  index: number;
+  scrollX: Animated.Value;
+  onProposeSwap: () => void;
 }
 
-function AnimatedCard({ person, index, scrollX }: AnimatedCardProps) {
-    const inputRange = [
-        (index - 1) * SNAP_WIDTH,
-        index * SNAP_WIDTH,
-        (index + 1) * SNAP_WIDTH,
-    ];
+function AnimatedCard({ person, index, scrollX, onProposeSwap }: AnimatedCardProps) {
+  const inputRange = [
+    (index - 1) * SNAP_WIDTH,
+    index * SNAP_WIDTH,
+    (index + 1) * SNAP_WIDTH,
+  ];
 
-    const rotate = scrollX.interpolate({
-        inputRange,
-        outputRange: ['5deg', '0deg', '-5deg'],
-        extrapolate: 'clamp',
-    });
+  const rotate = scrollX.interpolate({ inputRange, outputRange: ['5deg', '0deg', '-5deg'], extrapolate: 'clamp' });
+  const scale = scrollX.interpolate({ inputRange, outputRange: [0.92, 1, 0.92], extrapolate: 'clamp' });
+  const opacity = scrollX.interpolate({ inputRange, outputRange: [0.75, 1, 0.75], extrapolate: 'clamp' });
+  const translateY = scrollX.interpolate({ inputRange, outputRange: [8, 0, 8], extrapolate: 'clamp' });
 
-    const scale = scrollX.interpolate({
-        inputRange,
-        outputRange: [0.92, 1, 0.92],
-        extrapolate: 'clamp',
-    });
-
-    const opacity = scrollX.interpolate({
-        inputRange,
-        outputRange: [0.75, 1, 0.75],
-        extrapolate: 'clamp',
-    });
-
-    const translateY = scrollX.interpolate({
-        inputRange,
-        outputRange: [8, 0, 8],
-        extrapolate: 'clamp',
-    });
-
-    return (
-        <Animated.View
-            style={[
-                styles.cardContainer,
-                {
-                    transform: [
-                        { rotate },
-                        { scale },
-                        { translateY },
-                    ],
-                    opacity,
-                }
-            ]}
-        >
-            <View style={styles.personCard}>
-                <Image source={{ uri: person.avatar }} style={styles.cardImage} />
-                <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
-                    style={styles.cardGradient}
-                />
-                <View style={styles.cardContent}>
-                    <View style={styles.cardHeader}>
-                        <View>
-                            <Text style={styles.cardName}>{person.name}</Text>
-                            <View style={styles.locationRow}>
-                                <MapPin color={COLORS.rosePrimary} size={14} />
-                                <Text style={styles.cardDistance}>{person.distance}</Text>
-                            </View>
-                        </View>
-                        <View style={styles.ratingCircle}>
-                            <Text style={styles.ratingNum}>{person.rating}</Text>
-                        </View>
-                    </View>
-
-                    <View style={styles.skillsContainer}>
-                        <View style={styles.skillRow}>
-                            <Text style={styles.skillLabel}>Teaches</Text>
-                            <View style={styles.teachTag}>
-                                <Check color="#fff" size={14} />
-                                <Text style={styles.teachText}>{person.teach}</Text>
-                            </View>
-                        </View>
-                        <View style={styles.skillRow}>
-                            <Text style={styles.skillLabel}>Wants</Text>
-                            <View style={styles.learnTag}>
-                                <Text style={styles.learnText}>{person.learn}</Text>
-                            </View>
-                        </View>
-                    </View>
-
-                    <TouchableOpacity style={styles.proposeBtn}>
-                        <Text style={styles.proposeBtnText}>Propose Swap</Text>
-                    </TouchableOpacity>
-                </View>
+  return (
+    <Animated.View style={[styles.cardContainer, { transform: [{ rotate }, { scale }, { translateY }], opacity }]}>
+      <View style={styles.personCard}>
+        {/* Full-size avatar fills the card */}
+        <UserAvatar
+          photoURL={person.photoURL}
+          displayName={person.displayName}
+          uid={person.uid}
+          size={CARD_WIDTH}
+          style={styles.cardImage}
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
+          style={styles.cardGradient}
+        />
+        <View style={styles.cardContent}>
+          <View style={styles.cardHeader}>
+            <View>
+              <Text style={styles.cardName}>{person.displayName}</Text>
+              <View style={styles.locationRow}>
+                <MapPin color={COLORS.rosePrimary} size={14} />
+                <Text style={styles.cardDistance}>{'Nearby'}</Text>
+              </View>
             </View>
-        </Animated.View>
-    );
+            <View style={styles.ratingCircle}>
+              <Text style={styles.ratingNum}>
+                {person.rating > 0 ? person.rating.toFixed(1) : 'New'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.skillsContainer}>
+            <View style={styles.skillRow}>
+              <Text style={styles.skillLabel}>Teaches</Text>
+              <View style={styles.teachTag}>
+                <Check color="#fff" size={14} />
+                <Text style={styles.teachText}>{person.teachSkills?.[0] ?? '—'}</Text>
+              </View>
+            </View>
+            <View style={styles.skillRow}>
+              <Text style={styles.skillLabel}>Wants</Text>
+              <View style={styles.learnTag}>
+                <Text style={styles.learnText}>{person.wantSkills?.[0] ?? '—'}</Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.proposeBtn} onPress={onProposeSwap} activeOpacity={0.85}>
+            <Text style={styles.proposeBtnText}>Propose Swap ✨</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Animated.View>
+  );
 }
 
+// ── Skeleton Card ──
+function SkeletonCard({ index, scrollX }: { index: number; scrollX: Animated.Value }) {
+  const inputRange = [(index - 1) * SNAP_WIDTH, index * SNAP_WIDTH, (index + 1) * SNAP_WIDTH];
+  const scale = scrollX.interpolate({ inputRange, outputRange: [0.92, 1, 0.92], extrapolate: 'clamp' });
+  return (
+    <Animated.View style={[styles.cardContainer, { transform: [{ scale }] }]}>
+      <View style={[styles.personCard, { backgroundColor: 'rgba(255,255,255,0.06)' }]} />
+    </Animated.View>
+  );
+}
+
+// ── HomeScreen ──
 export default function HomeScreen() {
-    const insets = useSafeAreaInsets();
-    const [selectedCategory, setSelectedCategory] = useState('All');
-    const scrollX = useRef(new Animated.Value(0)).current;
-    const { currentUser } = useStore();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const scrollX = useRef(new Animated.Value(0)).current;
 
-    const handleScroll = Animated.event(
-        [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-        { useNativeDriver: true }
-    );
+  // Real data from Redux/Firestore
+  const authUser = useSelector((s: RootState) => s.auth.user);
+  const { users: fetchedUsers, loading, setUsers } = useDiscoveryFeed(authUser?.uid || null);
 
-    return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-            {/* Main App Background Gradient */}
-            <LinearGradient
-                colors={[COLORS.bgDeep, COLORS.bgDark, COLORS.bgBase]}
-                style={StyleSheet.absoluteFillObject}
+  const handleScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+    { useNativeDriver: true },
+  );
+
+  // Client-side category filter
+  const filteredUsers = selectedCategory === 'All'
+    ? fetchedUsers
+    : fetchedUsers.filter((u) =>
+        u.teachSkills?.some((s) =>
+          CATEGORY_SKILL_MAP[selectedCategory]?.some((k) =>
+            s.toLowerCase().includes(k),
+          ),
+        ),
+      );
+
+  const handleProposeSwap = async (toUser: UserDocument) => {
+    if (!authUser) return;
+    try {
+      // Create a "like" in the backend. If mutual, returns a MatchDocument
+      const match = await likeUser(authUser.uid, toUser.uid);
+      
+      // Remove them from the feed locally so they disappear after proposing
+      setUsers((prev) => prev.filter(u => u.uid !== toUser.uid));
+
+      if (match) {
+        // Mutual match!
+        router.push({
+          pathname: '/match-celebration',
+          params: { matchId: match.id, targetUid: toUser.uid, targetName: toUser.displayName, targetPhoto: toUser.photoURL || '' },
+        });
+      } else {
+        Alert.alert('🎉 Swap Proposed!', `Your request was sent to ${toUser.displayName}.`);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not send request. Please try again.');
+    }
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: COLORS.bgBase }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+
+        {/* ── Header ── */}
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.headerLeft}>
+            <UserAvatar
+              photoURL={authUser?.photoURL}
+              displayName={authUser?.displayName}
+              uid={authUser?.uid}
+              size={42}
             />
-
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={{ paddingBottom: 120 }}
-                showsVerticalScrollIndicator={false}
-            >
-                {/* Header */}
-                <View style={styles.header}>
-                    <View style={styles.headerLeft}>
-                        <View style={styles.avatarRing}>
-                            <Image
-                                source={{ uri: currentUser?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200' }}
-                                style={styles.headerAvatar}
-                            />
-                        </View>
-                        <View style={styles.headerText}>
-                            <Text style={styles.appTitle}>SkillSwap</Text>
-                            <Text style={styles.appSubtitle}>Exchange & Grow</Text>
-                        </View>
-                    </View>
-                    <View style={styles.headerIcons}>
-                        <TouchableOpacity style={styles.iconButton}>
-                            <Bell color={COLORS.textMuted} size={20} />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.iconButton}>
-                            <Grid3X3 color={COLORS.textMuted} size={20} />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* Search Bar */}
-                <View style={styles.searchContainer}>
-                    <BlurView intensity={20} tint="dark" style={styles.searchBarBlur}>
-                        <View style={styles.searchBar}>
-                            <SearchIcon color={COLORS.textMuted} size={18} />
-                            <TextInput
-                                placeholder="Search skills or people..."
-                                placeholderTextColor={COLORS.textMuted}
-                                style={styles.searchInput}
-                            />
-                        </View>
-                    </BlurView>
-                    <TouchableOpacity style={styles.nearbyPill}>
-                        <MapPin color="#fff" size={14} />
-                        <Text style={styles.nearbyText}>Nearby</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Category Pills */}
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.categoriesContainer}
-                >
-                    {categories.map((cat) => (
-                        <TouchableOpacity
-                            key={cat}
-                            onPress={() => setSelectedCategory(cat)}
-                            style={[
-                                styles.categoryPill,
-                                selectedCategory === cat && styles.categoryPillActive
-                            ]}
-                        >
-                            {selectedCategory === cat ? (
-                                <LinearGradient
-                                    colors={[COLORS.rosePrimary, COLORS.roseLight]}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 1 }}
-                                    style={styles.categoryPillGradient}
-                                >
-                                    <Text style={styles.categoryTextActive}>{cat}</Text>
-                                </LinearGradient>
-                            ) : (
-                                <Text style={styles.categoryText}>{cat}</Text>
-                            )}
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-
-                {/* Quick Action Buttons */}
-                <View style={styles.actionButtonsRow}>
-                    <TouchableOpacity style={styles.actionBtn}>
-                        <View style={styles.actionBtnIcon}>
-                            <Gift color={COLORS.rosePrimary} size={20} />
-                        </View>
-                        <Text style={styles.actionBtnText}>Offer Skill</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn}>
-                        <View style={styles.actionBtnIcon}>
-                            <ArrowLeftRight color={COLORS.rosePrimary} size={20} />
-                        </View>
-                        <Text style={styles.actionBtnText}>My Swaps</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* People Near You Section */}
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>People Near You</Text>
-                    <TouchableOpacity>
-                        <Text style={styles.seeAll}>See All</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* 3D Carousel */}
-                <Animated.ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    snapToInterval={SNAP_WIDTH}
-                    snapToAlignment="start"
-                    decelerationRate="fast"
-                    contentContainerStyle={styles.carouselContent}
-                    onScroll={handleScroll}
-                    scrollEventThrottle={16}
-                >
-                    {nearbyPeople.map((person, index) => (
-                        <AnimatedCard
-                            key={person.id}
-                            person={person}
-                            index={index}
-                            scrollX={scrollX}
-                        />
-                    ))}
-                </Animated.ScrollView>
-
-                {/* Featured Skills Section */}
-                <View style={[styles.sectionHeader, { marginTop: 24 }]}>
-                    <Text style={styles.sectionTitle}>Featured Skills</Text>
-                    <TouchableOpacity>
-                        <Text style={styles.seeAll}>See All</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.featuredContainer}
-                >
-                    {['UI Design', 'Guitar', 'Photography', 'Cooking'].map((skill) => (
-                        <TouchableOpacity key={skill} style={styles.featuredPill}>
-                            <Star color={COLORS.rosePrimary} size={14} fill={COLORS.rosePrimary} />
-                            <Text style={styles.featuredText}>{skill}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-            </ScrollView>
+            <View style={styles.headerText}>
+              <Text style={styles.appName}>SkillSwap</Text>
+              <Text style={styles.tagline}>Discovery</Text>
+            </View>
+          </View>
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.iconBtn}><Bell color={COLORS.textSecondary} size={20} /></TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn}><Grid3X3 color={COLORS.textSecondary} size={20} /></TouchableOpacity>
+          </View>
         </View>
-    );
+
+        {/* ── Search ── */}
+        <View style={styles.searchRow}>
+          <BlurView intensity={20} tint="dark" style={styles.searchBar}>
+            <SearchIcon color={COLORS.textMuted} size={16} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search skills or people..."
+              placeholderTextColor={COLORS.textMuted}
+            />
+          </BlurView>
+          <TouchableOpacity style={styles.nearbyBtn}>
+            <MapPin color={COLORS.textSecondary} size={14} />
+            <Text style={styles.nearbyText}>Nearby</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Categories ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesRow}
+        >
+          {categories.map((cat) => (
+            <TouchableOpacity
+              key={cat}
+              style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
+              onPress={() => setSelectedCategory(cat)}
+            >
+              <Text style={[styles.categoryText, selectedCategory === cat && styles.categoryTextActive]}>
+                {cat}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* ── Quick Actions ── */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionCard}>
+            <Gift color={COLORS.rosePrimary} size={20} />
+            <Text style={styles.actionText}>Offer Skill</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionCard}>
+            <ArrowLeftRight color={COLORS.rosePrimary} size={20} />
+            <Text style={styles.actionText}>My Swaps</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── People Near You ── */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>People Near You</Text>
+          <TouchableOpacity><Text style={styles.seeAll}>See All</Text></TouchableOpacity>
+        </View>
+
+        {/* Cards */}
+        {loading ? (
+          // Loading skeletons
+          <Animated.ScrollView
+            horizontal
+            scrollEnabled={false}
+            contentContainerStyle={{ paddingHorizontal: SIDE_PADDING, gap: CARD_GAP }}
+          >
+            {[0, 1].map((i) => (
+              <SkeletonCard key={i} index={i} scrollX={scrollX} />
+            ))}
+          </Animated.ScrollView>
+        ) : filteredUsers.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🌐</Text>
+            <Text style={styles.emptyText}>No people here yet</Text>
+            <Text style={styles.emptySubtext}>
+              {selectedCategory === 'All'
+                ? "You've proposed swaps to everyone nearby!"
+                : `No ${selectedCategory} matches found. Try "All".`}
+            </Text>
+          </View>
+        ) : (
+          <Animated.ScrollView
+            horizontal
+            snapToInterval={SNAP_WIDTH}
+            decelerationRate="fast"
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: SIDE_PADDING, gap: CARD_GAP }}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+          >
+            {filteredUsers.map((person, index) => (
+              <AnimatedCard
+                key={person.uid}
+                person={person}
+                index={index}
+                scrollX={scrollX}
+                onProposeSwap={() => handleProposeSwap(person)}
+              />
+            ))}
+          </Animated.ScrollView>
+        )}
+
+        {/* ── Featured Skills ── */}
+        <View style={[styles.sectionHeader, { marginTop: 32 }]}>
+          <Text style={styles.sectionTitle}>Featured Skills</Text>
+          <TouchableOpacity><Text style={styles.seeAll}>See All</Text></TouchableOpacity>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredRow}>
+          {['UI Design', 'Python', 'Guitar', 'Spanish', 'Photography', 'Yoga'].map((skill) => (
+            <View key={skill} style={styles.skillChip}>
+              <Star color={COLORS.rosePrimary} size={14} />
+              <Text style={styles.skillChipText}>{skill}</Text>
+            </View>
+          ))}
+        </ScrollView>
+
+      </ScrollView>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.bgBase,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    // Header
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-    },
-    headerLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    avatarRing: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        borderWidth: 2,
-        borderColor: COLORS.rose50,
-        padding: 2,
-    },
-    headerAvatar: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 22,
-    },
-    headerText: {},
-    appTitle: {
-        color: COLORS.textPrimary,
-        fontSize: 22,
-        fontWeight: '800',
-    },
-    appSubtitle: {
-        color: COLORS.rosePrimary,
-        fontSize: 12,
-    },
-    headerIcons: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    iconButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: COLORS.glass,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    // Search
-    searchContainer: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        gap: 10,
-        marginBottom: 16,
-    },
-    searchBarBlur: {
-        flex: 1,
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-    },
-    searchBar: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.glass,
-        paddingHorizontal: 14,
-        gap: 10,
-    },
-    searchInput: {
-        flex: 1,
-        color: COLORS.textPrimary,
-        fontSize: 15,
-        paddingVertical: 12,
-    },
-    nearbyPill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        paddingHorizontal: 14,
-        borderRadius: 12,
-        gap: 6,
-    },
-    nearbyText: {
-        color: COLORS.textPrimary,
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    // Categories
-    categoriesContainer: {
-        paddingHorizontal: 20,
-        marginBottom: 20,
-    },
-    categoryPill: {
-        marginRight: 10,
-        borderRadius: 20,
-        overflow: 'hidden',
-    },
-    categoryPillActive: {
-        shadowColor: COLORS.rosePrimary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 5,
-    },
-    categoryPillGradient: {
-        paddingHorizontal: 18,
-        paddingVertical: 10,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: COLORS.borderHover,
-    },
-    categoryText: {
-        color: COLORS.textMuted,
-        fontSize: 14,
-        fontWeight: '500',
-        paddingHorizontal: 18,
-        paddingVertical: 10,
-        backgroundColor: 'rgba(255,255,255,0.08)',
-        borderRadius: 20,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-    },
-    categoryTextActive: {
-        color: COLORS.textPrimary,
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    // Action Buttons
-    actionButtonsRow: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        gap: 12,
-        marginBottom: 24,
-    },
-    actionBtn: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.glass,
-        borderRadius: 14,
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-        gap: 10,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-    },
-    actionBtnIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: COLORS.rose20,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    actionBtnText: {
-        color: COLORS.textPrimary,
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    // Section Header
-    sectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        marginBottom: 16,
-    },
-    sectionTitle: {
-        color: COLORS.textPrimary,
-        fontSize: 20,
-        fontWeight: '700',
-    },
-    seeAll: {
-        color: COLORS.rosePrimary,
-        fontSize: 14,
-    },
-    // Carousel
-    carouselContent: {
-        paddingLeft: SIDE_PADDING,
-        paddingRight: SIDE_PADDING,
-    },
-    cardContainer: {
-        width: CARD_WIDTH,
-        height: CARD_HEIGHT + 20,
-        marginRight: CARD_GAP,
-    },
-    // Person Card
-    personCard: {
-        width: '100%',
-        height: CARD_HEIGHT,
-        borderRadius: 24,
-        overflow: 'hidden',
-        backgroundColor: COLORS.glass60,
-        borderWidth: 1,
-        borderColor: COLORS.borderSubtle,
-    },
-    cardImage: {
-        width: '100%',
-        height: '100%',
-    },
-    cardGradient: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '55%',
-    },
-    cardContent: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: 20,
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 12,
-    },
-    cardName: {
-        color: COLORS.textPrimary,
-        fontSize: 22,
-        fontWeight: '700',
-    },
-    locationRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-        gap: 4,
-    },
-    cardDistance: {
-        color: COLORS.textSecondary,
-        fontSize: 13,
-    },
-    ratingCircle: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    ratingNum: {
-        color: COLORS.rosePrimary,
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    skillsContainer: {
-        gap: 8,
-    },
-    skillRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    skillLabel: {
-        color: COLORS.textMuted,
-        fontSize: 13,
-        width: 60,
-    },
-    // Teach Badge
-    teachTag: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.rose20,
-        borderWidth: 1,
-        borderColor: COLORS.rose30,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 10,
-        gap: 8,
-    },
-    teachText: {
-        color: COLORS.textPrimary,
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    // Learn Badge
-    learnTag: {
-        flex: 1,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 10,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-    },
-    learnText: {
-        color: COLORS.textMuted,
-        fontSize: 14,
-    },
-    // Propose Swap Button
-    proposeBtn: {
-        marginTop: 14,
-        backgroundColor: COLORS.rosePrimary,
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    proposeBtnText: {
-        color: COLORS.textPrimary,
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    // Featured
-    featuredContainer: {
-        paddingHorizontal: 20,
-        marginBottom: 20,
-    },
-    featuredPill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.rose20,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 20,
-        gap: 8,
-        marginRight: 10,
-        borderWidth: 1,
-        borderColor: COLORS.rose30,
-    },
-    featuredText: {
-        color: COLORS.rosePrimary,
-        fontSize: 14,
-        fontWeight: '500',
-    },
+  container: { flex: 1 },
+
+  // Header
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerText: {},
+  appName: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  tagline: { color: COLORS.rosePrimary, fontSize: 11, fontWeight: '600' },
+  headerRight: { flexDirection: 'row', gap: 8 },
+  iconBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+
+  // Search
+  searchRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 16 },
+  searchBar: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, height: 44, borderRadius: 22,
+    borderWidth: 1, borderColor: COLORS.borderLight, overflow: 'hidden',
+  },
+  searchInput: { flex: 1, color: '#fff', fontSize: 14 },
+  nearbyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1, borderColor: COLORS.borderLight,
+  },
+  nearbyText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+
+  // Categories
+  categoriesRow: { paddingHorizontal: 20, gap: 8, marginBottom: 20 },
+  categoryPill: {
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1, borderColor: COLORS.borderSubtle,
+  },
+  categoryPillActive: { backgroundColor: COLORS.rosePrimary, borderColor: COLORS.rosePrimary },
+  categoryText: { color: COLORS.textMuted, fontSize: 13, fontWeight: '600' },
+  categoryTextActive: { color: '#fff' },
+
+  // Quick Actions
+  actionsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 28 },
+  actionCard: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(255,26,92,0.1)', borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderWidth: 1, borderColor: COLORS.rose20,
+  },
+  actionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+
+  // Section header
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 16 },
+  sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  seeAll: { color: COLORS.rosePrimary, fontSize: 13, fontWeight: '600' },
+
+  // Card
+  cardContainer: { width: CARD_WIDTH },
+  personCard: { width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 24, overflow: 'hidden', backgroundColor: COLORS.bgDeep },
+  cardImage: { width: CARD_WIDTH, height: CARD_HEIGHT, position: 'absolute', top: 0, left: 0, borderRadius: 24 },
+  cardGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: CARD_HEIGHT * 0.6 },
+  cardContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  cardName: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  cardDistance: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+  ratingCircle: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.rose20, borderWidth: 1, borderColor: COLORS.rose50,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  ratingNum: { color: COLORS.rosePrimary, fontSize: 12, fontWeight: '800' },
+
+  skillsContainer: { gap: 8, marginBottom: 14 },
+  skillRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  skillLabel: { color: COLORS.textMuted, fontSize: 12, width: 50 },
+  teachTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  teachText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  learnTag: {
+    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+  },
+  learnText: { color: COLORS.textSecondary, fontSize: 13 },
+
+  proposeBtn: {
+    backgroundColor: COLORS.rosePrimary, borderRadius: 12,
+    paddingVertical: 12, alignItems: 'center',
+  },
+  proposeBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Empty state
+  emptyState: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
+  emptyEmoji: { fontSize: 48, marginBottom: 12 },
+  emptyText: { color: 'rgba(255,255,255,0.6)', fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  emptySubtext: { color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center', lineHeight: 18 },
+
+  // Featured Skills
+  featuredRow: { paddingHorizontal: 20, gap: 10 },
+  skillChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: COLORS.rose20, borderWidth: 1, borderColor: COLORS.rose30,
+  },
+  skillChipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });

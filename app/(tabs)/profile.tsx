@@ -1,16 +1,27 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useStore } from '../../src/store/useStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Settings, Edit2, Moon, Sun, Smartphone } from 'lucide-react-native';
 import { useTheme } from '../../src/context/ThemeContext';
 import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
 import { getProfileBaseColor } from '../../src/utils/colorUtils';
+import { useDispatch } from 'react-redux';
+import type { AppDispatch } from '../../src/store';
+import { signOut } from '../../src/store/authSlice';
 
 export default function ProfileScreen() {
     const { currentUser } = useStore();
     const insets = useSafeAreaInsets();
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
+    const dispatch = useDispatch<AppDispatch>();
+
+    const handleSignOut = () => {
+        Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Sign Out', style: 'destructive', onPress: () => dispatch(signOut()) },
+        ]);
+    };
 
     const baseColor = getProfileBaseColor(currentUser);
     const seedKey = `tab:profile:${currentUser.id}`;
@@ -26,7 +37,7 @@ export default function ProfileScreen() {
             <ScrollView style={[styles.container, { paddingBottom: 90, backgroundColor: 'transparent' }]} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
                 <View style={styles.header}>
                     <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={handleSignOut}>
                         <Settings color={colors.text} size={24} />
                     </TouchableOpacity>
                 </View>
