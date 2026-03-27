@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,14 @@ import type { RootState } from '../../src/store';
 
 export default function SignUp() {
   const dispatch = useAuthDispatch();
-  const { isLoading, error } = useSelector((s: RootState) => s.auth);
+  const { isLoading, error, isAuthenticated, isProfileComplete } = useSelector((s: RootState) => s.auth);
+
+  // Redirect after successful sign-up
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      router.replace(isProfileComplete ? '/(tabs)' : '/(auth)/profile-setup');
+    }
+  }, [isAuthenticated, isProfileComplete, isLoading]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

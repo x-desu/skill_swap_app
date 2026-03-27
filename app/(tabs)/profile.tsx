@@ -1,331 +1,347 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { useStore } from '../../src/store/useStore';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, Settings, Edit2, Moon, Sun, Smartphone } from 'lucide-react-native';
-import { useTheme } from '../../src/context/ThemeContext';
-import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
-import { getProfileBaseColor } from '../../src/utils/colorUtils';
-import { useDispatch } from 'react-redux';
-import type { AppDispatch } from '../../src/store';
-import { signOut } from '../../src/store/authSlice';
+import { MapPin, Settings, Edit2, Plus } from 'lucide-react-native';
+import { router } from 'expo-router';
+import type { RootState } from '../../src/store';
+import UserAvatar from '../../src/components/UserAvatar';
+
+const COLORS = {
+  rosePrimary: '#ff1a5c',
+  bgDark: '#1a0505',
+  bgBase: '#0d0202',
+  textPrimary: '#ffffff',
+  textSecondary: 'rgba(255, 255, 255, 0.7)',
+  borderLight: 'rgba(255, 255, 255, 0.1)',
+  cardBg: 'rgba(255, 255, 255, 0.03)',
+  statBg: 'rgba(255, 26, 92, 0.05)',
+};
 
 export default function ProfileScreen() {
-    const { currentUser } = useStore();
     const insets = useSafeAreaInsets();
-    const { colors, themeMode, setThemeMode, isDark } = useTheme();
-    const dispatch = useDispatch<AppDispatch>();
+    const currentUser = useSelector((state: RootState) => state.profile.profile);
 
-    const handleSignOut = () => {
-        Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Sign Out', style: 'destructive', onPress: () => dispatch(signOut()) },
-        ]);
-    };
+    if (!currentUser) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={COLORS.rosePrimary} />
+            </View>
+        );
+    }
 
-    const baseColor = getProfileBaseColor(currentUser);
-    const seedKey = `tab:profile:${currentUser.id}`;
-
-    const followers = currentUser.followersCount ?? 0;
-    const following = currentUser.followingCount ?? 0;
-    const sessions = currentUser.completedSessions ?? 0;
-    const creditsEarned = currentUser.creditsEarned ?? 0;
-    const creditsSpent = currentUser.creditsSpent ?? 0;
+    const followers = currentUser.mutualMatches ?? 0;
+    const following = currentUser.swipeRightCount ?? 0;
+    const sessions = currentUser.completedSwaps ?? 0;
+    const creditsEarned = currentUser.credits ?? 0;
+    const creditsSpent = currentUser.reviewCount ?? 0;
 
     return (
-        <ProfileGlowBackground baseColor={baseColor} seedKey={seedKey}>
-            <ScrollView style={[styles.container, { paddingBottom: 90, backgroundColor: 'transparent' }]} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
-                <View style={styles.header}>
-                    <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
-                    <TouchableOpacity onPress={handleSignOut}>
-                        <Settings color={colors.text} size={24} />
-                    </TouchableOpacity>
-                </View>
-
-            <View style={styles.profileHeader}>
-                <Image source={{ uri: currentUser.avatar }} style={styles.avatar} />
-                <Text style={[styles.name, { color: colors.text }]}>{currentUser.name}</Text>
-
-                <View style={styles.locationContainer}>
-                    <MapPin color={isDark ? '#ccc' : '#666'} size={14} />
-                    <Text style={[styles.location, { color: isDark ? '#ccc' : '#666' }]}>{currentUser.location}</Text>
-                </View>
-
-                <TouchableOpacity style={[styles.editButton, { backgroundColor: isDark ? '#333' : '#f0f0f0' }]}>
-                    <Edit2 color={colors.text} size={16} />
-                    <Text style={[styles.editButtonText, { color: colors.text }]}>Edit Profile</Text>
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+            <View style={styles.header}>
+                <Text style={styles.headerTitle}>My Profile</Text>
+                <TouchableOpacity onPress={() => router.push('/settings')} style={styles.iconButton}>
+                    <Settings color={COLORS.textPrimary} size={24} />
                 </TouchableOpacity>
-
-                <View style={[styles.statsRow, { borderColor: colors.border }]}>
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statNumber, { color: colors.text }]}>{followers}</Text>
-                        <Text style={styles.statLabel}>Followers</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statNumber, { color: colors.text }]}>{following}</Text>
-                        <Text style={styles.statLabel}>Following</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statNumber, { color: colors.text }]}>{sessions}</Text>
-                        <Text style={styles.statLabel}>Sessions</Text>
-                    </View>
-                </View>
-
-                <View style={styles.statsRowSecondary}>
-                    <View style={styles.statItemSecondary}>
-                        <Text style={styles.statSecondaryLabel}>Credits earned</Text>
-                        <Text style={[styles.statSecondaryValue, { color: colors.text }]}>{creditsEarned.toFixed(1)}</Text>
-                    </View>
-                    <View style={styles.statItemSecondary}>
-                        <Text style={styles.statSecondaryLabel}>Credits spent</Text>
-                        <Text style={[styles.statSecondaryValue, { color: colors.text }]}>{creditsSpent.toFixed(1)}</Text>
-                    </View>
-                </View>
             </View>
 
-            <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
-                <View style={[styles.themeSelector, { backgroundColor: isDark ? '#1E1E1E' : '#f0f0f0', borderColor: colors.border }]}>
-                    <TouchableOpacity
-                        style={[styles.themeOption, themeMode === 'light' && styles.themeActive]}
-                        onPress={() => setThemeMode('light')}
-                    >
-                        <Sun color={themeMode === 'light' ? '#000' : '#999'} size={20} />
-                        <Text style={[styles.themeText, { color: themeMode === 'light' ? '#000' : '#999' }]}>Light</Text>
+            <ScrollView contentContainerStyle={styles.content}>
+                <View style={styles.profileHeader}>
+                    <UserAvatar
+                        uid={currentUser.uid}
+                        photoURL={currentUser.photoURL}
+                        displayName={currentUser.displayName}
+                        size={120}
+                    />
+                    <Text style={styles.name}>{currentUser.displayName}</Text>
+
+                    <View style={styles.locationContainer}>
+                        <MapPin color={COLORS.rosePrimary} size={14} />
+                        <Text style={styles.location}>
+                            {currentUser.location?.city ? `${currentUser.location.city}, ${currentUser.location.country}` : 'Global'}
+                        </Text>
+                    </View>
+
+                    <TouchableOpacity style={styles.editButton}>
+                        <Edit2 color={COLORS.textPrimary} size={14} />
+                        <Text style={styles.editButtonText}>Edit Profile</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={[styles.themeOption, themeMode === 'dark' && styles.themeActive]}
-                        onPress={() => setThemeMode('dark')}
-                    >
-                        <Moon color={themeMode === 'dark' ? '#000' : '#999'} size={20} />
-                        <Text style={[styles.themeText, { color: themeMode === 'dark' ? '#000' : '#999' }]}>Dark</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.themeOption, themeMode === 'system' && styles.themeActive]}
-                        onPress={() => setThemeMode('system')}
-                    >
-                        <Smartphone color={themeMode === 'system' ? '#000' : '#999'} size={20} />
-                        <Text style={[styles.themeText, { color: themeMode === 'system' ? '#000' : '#999' }]}>System</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>About Me</Text>
-                <Text style={[styles.bio, { color: isDark ? '#ccc' : '#555' }]}>{currentUser.bio}</Text>
-            </View>
-
-            <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Skills I Offer</Text>
-                <View style={styles.skillsContainer}>
-                    {currentUser.skillsOffered.map(skill => (
-                        <View key={skill.id} style={[styles.skillChip, { backgroundColor: isDark ? '#333' : '#333' }]}>
-                            <Text style={styles.skillText}>{skill.title}</Text>
-                            <Text style={styles.skillCost}>{skill.cost} cr/hr</Text>
+                    <View style={styles.statsRow}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>{followers}</Text>
+                            <Text style={styles.statLabel}>Followers</Text>
                         </View>
-                    ))}
-                    <TouchableOpacity style={[styles.skillChip, styles.addSkill, { borderColor: colors.border, backgroundColor: 'transparent' }]}>
-                        <Text style={[styles.addSkillText, { color: colors.text }]}>+ Add</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Skills I Need</Text>
-                <View style={styles.skillsContainer}>
-                    {currentUser.skillsNeeded.map((skill, index) => (
-                        <View key={index} style={[styles.skillChip, styles.neededChip, { backgroundColor: isDark ? '#333' : '#f0f0f0' }]}>
-                            <Text style={[styles.skillText, styles.neededText, { color: colors.text }]}>{skill}</Text>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>{following}</Text>
+                            <Text style={styles.statLabel}>Following</Text>
                         </View>
-                    ))}
-                    <TouchableOpacity style={[styles.skillChip, styles.addSkill, { borderColor: colors.border, backgroundColor: 'transparent' }]}>
-                        <Text style={[styles.addSkillText, { color: colors.text }]}>+ Add</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>{sessions}</Text>
+                            <Text style={styles.statLabel}>Sessions</Text>
+                        </View>
+                    </View>
 
+                    <View style={styles.statsRowSecondary}>
+                        <View style={styles.statItemSecondary}>
+                            <Text style={styles.statSecondaryLabel}>Credits earned</Text>
+                            <Text style={styles.statSecondaryValue}>{creditsEarned.toFixed(1)}</Text>
+                        </View>
+                        <View style={styles.statItemSecondary}>
+                            <Text style={styles.statSecondaryLabel}>Credits spent</Text>
+                            <Text style={styles.statSecondaryValue}>{creditsSpent.toFixed(1)}</Text>
+                        </View>
+                    </View>
+                </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>About Me</Text>
+                    <View style={styles.bioCard}>
+                        <Text style={styles.bio}>{currentUser.bio || 'No bio provided yet. Add a few words about yourself!'}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Skills I Offer</Text>
+                    <View style={styles.skillsContainer}>
+                        {currentUser.teachSkills.map((skill: string, idx: number) => (
+                            <View key={`teach-${idx}`} style={styles.skillChipPrimary}>
+                                <Text style={styles.skillTextPrimary}>{skill}</Text>
+                            </View>
+                        ))}
+                        <TouchableOpacity style={styles.addSkillChip}>
+                            <Plus color={COLORS.textSecondary} size={14} />
+                            <Text style={styles.addSkillText}>Add</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Skills I Need</Text>
+                    <View style={styles.skillsContainer}>
+                        {currentUser.wantSkills.map((skill: string, index: number) => (
+                            <View key={`want-${index}`} style={styles.skillChipSecondary}>
+                                <Text style={styles.skillTextSecondary}>{skill}</Text>
+                            </View>
+                        ))}
+                        <TouchableOpacity style={styles.addSkillChip}>
+                            <Plus color={COLORS.textSecondary} size={14} />
+                            <Text style={styles.addSkillText}>Add</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
             </ScrollView>
-        </ProfileGlowBackground>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 }, // Dynamic bg
-    content: { paddingBottom: 40, paddingHorizontal: 20 },
+    container: { 
+        flex: 1, 
+        backgroundColor: COLORS.bgBase 
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20,
+        paddingHorizontal: 24,
+        paddingTop: 10,
+        paddingBottom: 15,
     },
-    title: {
+    headerTitle: {
         fontSize: 28,
-        fontWeight: 'bold',
-        // color handled inline
+        fontWeight: '800',
+        color: COLORS.textPrimary,
+        letterSpacing: 0.5,
+    },
+    iconButton: {
+        padding: 8,
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+    },
+    content: { 
+        paddingBottom: 120, 
+        paddingHorizontal: 20,
+        paddingTop: 10,
     },
     profileHeader: {
         alignItems: 'center',
-        marginBottom: 30,
-    },
-    avatar: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        marginBottom: 15,
+        marginBottom: 35,
     },
     name: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        // color handled inline
-        marginBottom: 5,
+        fontSize: 26,
+        fontWeight: '800',
+        color: COLORS.textPrimary,
+        marginTop: 15,
+        marginBottom: 4,
     },
     locationContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: 15,
+        backgroundColor: COLORS.cardBg,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
     },
     location: {
-        color: '#666',
-        marginLeft: 5,
-        fontSize: 16,
+        color: COLORS.textSecondary,
+        marginLeft: 6,
+        fontSize: 14,
+        fontWeight: '500',
     },
     editButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 20,
+        paddingHorizontal: 18,
         paddingVertical: 10,
         borderRadius: 20,
-        // bg handled inline
+        backgroundColor: COLORS.rosePrimary,
+        marginBottom: 25,
+        shadowColor: COLORS.rosePrimary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
     },
     editButtonText: {
         marginLeft: 8,
-        fontWeight: '600',
-        // color handled inline
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        fontSize: 14,
     },
     statsRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 20,
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 16,
+        width: '100%',
+        backgroundColor: COLORS.cardBg,
+        paddingVertical: 18,
+        borderRadius: 20,
         borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        marginBottom: 15,
     },
     statItem: {
         alignItems: 'center',
         flex: 1,
     },
+    statDivider: {
+        width: 1,
+        height: 30,
+        backgroundColor: COLORS.borderLight,
+    },
     statNumber: {
-        fontSize: 18,
-        fontWeight: '700',
-        marginBottom: 2,
+        fontSize: 22,
+        fontWeight: '800',
+        color: COLORS.textPrimary,
+        marginBottom: 4,
     },
     statLabel: {
-        fontSize: 12,
-        color: '#888',
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        fontWeight: '500',
     },
     statsRowSecondary: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: 12,
+        width: '100%',
         paddingHorizontal: 10,
     },
     statItemSecondary: {
         flex: 1,
-    },
-    statSecondaryLabel: {
-        fontSize: 11,
-        color: '#888',
-        marginBottom: 2,
-    },
-    statSecondaryValue: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    section: {
-        marginBottom: 25,
-    },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        // color handled inline
-        marginBottom: 10,
-    },
-    themeSelector: {
-        flexDirection: 'row',
-        borderRadius: 15,
-        padding: 4,
-        borderWidth: 1,
-        // bg/border handled inline
-    },
-    themeOption: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 10,
-        borderRadius: 12,
+        justifyContent: 'space-between',
+        backgroundColor: COLORS.cardBg,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        marginHorizontal: 5,
     },
-    themeActive: {
-        backgroundColor: '#fff',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
+    statSecondaryLabel: {
+        fontSize: 12,
+        color: COLORS.textSecondary,
+        fontWeight: '500',
     },
-    themeText: {
-        marginLeft: 6,
-        fontWeight: '600',
-        fontSize: 14,
+    statSecondaryValue: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: COLORS.rosePrimary,
+    },
+    section: {
+        marginBottom: 30,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: COLORS.textPrimary,
+        marginBottom: 15,
+        letterSpacing: 0.5,
+    },
+    bioCard: {
+        backgroundColor: COLORS.cardBg,
+        padding: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
     },
     bio: {
-        fontSize: 16,
-        // color handled inline
-        lineHeight: 24,
+        fontSize: 15,
+        color: COLORS.textSecondary,
+        lineHeight: 22,
     },
     skillsContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
+        gap: 10,
     },
-    skillChip: {
-        // bg handled inline
-        paddingHorizontal: 15,
-        paddingVertical: 10,
+    skillChipPrimary: {
+        backgroundColor: 'rgba(255, 26, 92, 0.15)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
         borderRadius: 20,
-        marginRight: 10,
-        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 26, 92, 0.4)',
+    },
+    skillTextPrimary: {
+        color: COLORS.rosePrimary,
+        fontWeight: '700',
+        fontSize: 14,
+    },
+    skillChipSecondary: {
+        backgroundColor: COLORS.cardBg,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+    },
+    skillTextSecondary: {
+        color: COLORS.textPrimary,
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    addSkillChip: {
         flexDirection: 'row',
         alignItems: 'center',
-    },
-    skillText: {
-        color: '#fff',
-        fontWeight: '600',
-        marginRight: 8,
-    },
-    skillCost: {
-        color: '#FFD700',
-        fontWeight: 'bold',
-        fontSize: 12,
-    },
-    neededChip: {
-        // bg handled inline
-    },
-    neededText: {
-        // color handled inline
-        marginRight: 0,
-    },
-    addSkill: {
+        justifyContent: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
         borderWidth: 1,
+        borderColor: COLORS.textSecondary,
         borderStyle: 'dashed',
-        // borderColor handled inline
-        // removed bg here
     },
     addSkillText: {
         fontWeight: '600',
-        // color handled inline
+        color: COLORS.textSecondary,
+        fontSize: 14,
+        marginLeft: 4,
     }
 });

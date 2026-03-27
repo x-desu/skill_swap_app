@@ -135,26 +135,30 @@ const authSlice = createSlice({
     setUser(state, action: PayloadAction<AuthUser | null>) {
       state.user = action.payload;
       state.isAuthenticated = action.payload !== null;
-      state.isLoading = false;
+      if (action.payload === null) {
+        state.isProfileComplete = false;
+      }
     },
     setProfileComplete(state, action: PayloadAction<boolean>) {
       state.isProfileComplete = action.payload;
+    },
+    setAppLoading(state, action: PayloadAction<boolean>) {
+      state.isLoading = action.payload;
     },
     clearError(state) {
       state.error = null;
     },
   },
   extraReducers: (builder) => {
-    const allThunks = [
+    const authThunks = [
       signInWithGoogle,
       signInWithApple,
       signUpWithEmail,
       signInWithEmail,
-      sendPasswordReset,
       signOut,
     ];
 
-    allThunks.forEach((thunk) => {
+    authThunks.forEach((thunk) => {
       builder
         .addCase(thunk.pending, (state) => {
           state.isLoading = true;
@@ -165,15 +169,29 @@ const authSlice = createSlice({
           state.error = action.payload as string;
         })
         .addCase(thunk.fulfilled, (state, action) => {
-          state.isLoading = false;
+          // Do NOT set isLoading = false here for logins!
+          // We must wait for onAuthStateChanged and Firestore hydration to finish.
           if (action.payload) {
             state.lastSignInMethod = action.payload as AuthState['lastSignInMethod'];
           }
-          // Actual user state set by onAuthStateChanged, not here
         });
     });
+
+    // Password reset doesn't trigger onAuthStateChanged, so we MUST clear loading state here
+    builder
+      .addCase(sendPasswordReset.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(sendPasswordReset.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      .addCase(sendPasswordReset.fulfilled, (state) => {
+        state.isLoading = false;
+      });
   },
 });
 
-export const { setUser, setProfileComplete, clearError } = authSlice.actions;
+export const { setUser, setProfileComplete, setAppLoading, clearError } = authSlice.actions;
 export default authSlice.reducer;

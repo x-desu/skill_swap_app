@@ -32,13 +32,17 @@ export const upsertUserProfile = async (
   data: Partial<UserProfileInput>,
 ): Promise<void> => {
   const ref = usersCol().doc(uid);
+  const snap = await ref.get();
 
-  // Single set() with merge:true — atomic, no get() needed, no race condition.
-  // Defaults fill missing fields on first write; subsequent writes only touch
-  // what's in `data` plus updatedAt (merge preserves everything else).
-  await ref.set(
-    {
-      // Defaults — overridden by `data` if provided
+  if (snap.data() !== undefined) {
+    // Document exists — only update the specific fields provided
+    await ref.update({
+      ...data,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  } else {
+    // New document — inject all required default values
+    await ref.set({
       displayName: '',
       photoURL: null,
       email: null,
@@ -52,14 +56,11 @@ export const upsertUserProfile = async (
       credits: 10,
       isProfileComplete: false,
       hasPhoto: false,
-      // Caller-supplied data wins over defaults
-      ...data,
-      // These are always written
+      ...data, // Caller-supplied data wins
       uid,
       updatedAt: firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+    });
+  }
 };
 
 /**

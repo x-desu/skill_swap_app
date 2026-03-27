@@ -2,12 +2,14 @@ import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { Provider, useDispatch } from 'react-redux';
 import { store } from '../src/store';
-import { setUser } from '../src/store/authSlice';
+import { setUser, setProfileComplete, setAppLoading } from '../src/store/authSlice';
 import auth from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider';
 import { ThemeProvider } from '../src/context/ThemeContext';
-import { upsertUserProfile } from '../src/services/firestoreService';
+import { listenToUserProfile, upsertUserProfile } from '../src/services/firestoreService';
+import { clearProfile, setProfile } from '../src/store/profileSlice';
+import DataProvider from '../src/components/DataProvider';
 import '../global.css';
 
 GoogleSignin.configure({
@@ -22,8 +24,13 @@ function AppNavigator() {
   // On every login, upsertUserProfile creates the doc if missing (first login)
   // or is a no-op merge (subsequent logins)
   useEffect(() => {
+    let profileUnsubscribe: (() => void) | null = null;
+
     const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
+        // Hold routing until Firestore is checked
+        dispatch(setAppLoading(true));
+        
         // 1. Update Redux with Firebase Auth fields
         dispatch(
           setUser({
@@ -37,11 +44,22 @@ function AppNavigator() {
         // 2. Create/merge Firestore user document (idempotent)
         // Wrapped in try/catch — silently skips if Firestore rules aren't published yet
         try {
+          console.log('[SkillSwap Auth] Upserting user profile...');
           await upsertUserProfile(firebaseUser.uid, {
             email: firebaseUser.email,
             displayName: firebaseUser.displayName ?? '',
             photoURL: firebaseUser.photoURL,
             hasPhoto: !!firebaseUser.photoURL,
+          });
+          
+          console.log('[SkillSwap Auth] Attaching real-time profile listener...');
+          if (profileUnsubscribe) profileUnsubscribe();
+          
+          profileUnsubscribe = listenToUserProfile(firebaseUser.uid, (doc) => {
+            if (doc) {
+              dispatch(setProfile(doc));
+              dispatch(setProfileComplete(doc.isProfileComplete ?? false));
+            }
           });
         } catch (e: any) {
           if (e?.code === 'firestore/permission-denied') {
@@ -49,14 +67,27 @@ function AppNavigator() {
           } else {
             console.error('[SkillSwap] upsertUserProfile error:', e);
           }
+        } finally {
+          console.log('[SkillSwap Auth] Releasing loading lock');
+          dispatch(setAppLoading(false));
         }
       } else {
+        if (profileUnsubscribe) {
+          profileUnsubscribe();
+          profileUnsubscribe = null;
+        }
         dispatch(setUser(null));
+        dispatch(clearProfile());
+        dispatch(setProfileComplete(false));
+        dispatch(setAppLoading(false));
       }
     });
-    return unsubscribe;
-  }, [dispatch]);
 
+    return () => {
+      unsubscribe();
+      if (profileUnsubscribe) profileUnsubscribe();
+    };
+  }, [dispatch]);
 
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
@@ -71,6 +102,10 @@ function AppNavigator() {
         name="chat/[id]"
         options={{ headerShown: true, title: 'Chat', animation: 'slide_from_right' }}
       />
+      <Stack.Screen
+        name="settings"
+        options={{ headerShown: false, presentation: 'modal' }}
+      />
     </Stack>
   );
 }
@@ -80,7 +115,9 @@ export default function RootLayout() {
     <Provider store={store}>
       <GluestackUIProvider mode="dark">
         <ThemeProvider>
-          <AppNavigator />
+          <DataProvider>
+            <AppNavigator />
+          </DataProvider>
         </ThemeProvider>
       </GluestackUIProvider>
     </Provider>

@@ -10,10 +10,11 @@ import {
   Bell, Grid3X3, Search as SearchIcon, MapPin, Check,
   Gift, ArrowLeftRight, Star,
 } from 'lucide-react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useRouter } from 'expo-router';
 import type { RootState } from '../../src/store';
 import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
+import { removeFeedItem, recordSwipeData } from '../../src/store/discoverySlice';
 import { likeUser } from '../../src/services/matchingService';
 import UserAvatar from '../../src/components/UserAvatar';
 import type { UserDocument } from '../../src/types/user';
@@ -154,9 +155,11 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const scrollX = useRef(new Animated.Value(0)).current;
 
+  const dispatch = useDispatch();
+
   // Real data from Redux/Firestore
   const authUser = useSelector((s: RootState) => s.auth.user);
-  const { users: fetchedUsers, loading, setUsers } = useDiscoveryFeed(authUser?.uid || null);
+  const { users: fetchedUsers, loading } = useDiscoveryFeed(authUser?.uid || null);
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -177,11 +180,12 @@ export default function HomeScreen() {
   const handleProposeSwap = async (toUser: UserDocument) => {
     if (!authUser) return;
     try {
-      // Create a "like" in the backend. If mutual, returns a MatchDocument
+      // Create a "like" in the backend. If mutual, returns a MatchDocument.
+      // Optimistic UI: Remove them from the local Redux feed instantly.
+      dispatch(removeFeedItem(toUser.uid));
+      dispatch(recordSwipeData({ targetUid: toUser.uid, type: 'like' }));
+
       const match = await likeUser(authUser.uid, toUser.uid);
-      
-      // Remove them from the feed locally so they disappear after proposing
-      setUsers((prev) => prev.filter(u => u.uid !== toUser.uid));
 
       if (match) {
         // Mutual match!

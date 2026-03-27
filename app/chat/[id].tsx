@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { GiftedChat, Bubble, Send, InputToolbar } from 'react-native-gifted-chat';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
 
 import type { RootState } from '../../src/store';
+import { setRoomMessages } from '../../src/store/chatSlice';
 import { sendMessage, listenToMessages } from '../../src/services/chatService';
 import type { MessageDocument } from '../../src/types/user';
 import UserAvatar from '../../src/components/UserAvatar';
@@ -26,15 +27,18 @@ export default function ChatRoomScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
+  const dispatch = useDispatch();
   const authUser = useSelector((state: RootState) => state.auth.user);
 
   const matchId = params.id as string;
   const targetUid = params.targetUid as string;
+  
   // If coming from Match Celebration, we have name & photo. Otherwise just UID.
   const targetName = (params.name as string) || `Match (${targetUid?.slice(0, 4)}...)`;
   const targetPhoto = (params.photoURL as string) || '';
 
-  const [messages, setMessages] = useState<MessageDocument[]>([]);
+  const initialMessages = useSelector((state: RootState) => state.chat.rooms[matchId] || []);
+  const [messages, setMessages] = useState<MessageDocument[]>(initialMessages);
 
   // ── Real-time Listener ──
   // Mounts the Firestore read listener exactly when this screen opens.
@@ -44,10 +48,11 @@ export default function ChatRoomScreen() {
     
     const unsubscribe = listenToMessages(matchId, (newMessages) => {
       setMessages(newMessages);
+      dispatch(setRoomMessages({ roomId: matchId, messages: newMessages }));
     });
 
     return () => unsubscribe();
-  }, [matchId]);
+  }, [matchId, dispatch]);
 
   const onSend = useCallback(
     async (newMessages: MessageDocument[] = []) => {

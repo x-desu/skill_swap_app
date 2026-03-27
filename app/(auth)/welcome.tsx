@@ -23,10 +23,10 @@ export default function Welcome() {
 
   // Redirect after sign-in (fires after Stack is mounted, so navigator is ready)
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isLoading) {
       router.replace(isProfileComplete ? '/(tabs)' : '/(auth)/profile-setup');
     }
-  }, [isAuthenticated, isProfileComplete]);
+  }, [isAuthenticated, isProfileComplete, isLoading]);
 
   const handleGoogle = async () => {
     setActiveBtn('google');

@@ -31,7 +31,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, X, Plus, ChevronRight } from 'lucide-react-native';
+import * as Location from 'expo-location';
+import { Camera, X, Plus, ChevronRight, MapPin } from 'lucide-react-native';
 import { useAuthDispatch } from '../../src/hooks/useAuth';
 import { setProfileComplete } from '../../src/store/authSlice';
 import { uploadProfilePhoto } from '../../src/services/storageService';
@@ -169,6 +170,8 @@ export default function ProfileSetup() {
   const [needInput, setNeedInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(firebaseUser?.photoURL ?? null);
+  const [location, setLocation] = useState<{ city: string; country: string } | null>(null);
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
 
   // ── Skill helpers ──────────────────────────────────────────────────────────
 
@@ -234,6 +237,38 @@ export default function ProfileSetup() {
     ]);
   };
 
+  // ── Location ───────────────────────────────────────────────────────────────
+
+  const fetchLocation = async () => {
+    setIsLocationLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Location access is required to auto-fill your area.');
+        return;
+      }
+
+      const locationData = await Location.getCurrentPositionAsync({});
+      const geocode = await Location.reverseGeocodeAsync({
+        latitude: locationData.coords.latitude,
+        longitude: locationData.coords.longitude,
+      });
+
+      if (geocode.length > 0) {
+        const place = geocode[0];
+        setLocation({
+          city: place.city || place.subregion || place.region || 'Unknown',
+          country: place.country || 'Unknown',
+        });
+      }
+    } catch (error) {
+      console.error('Location error:', error);
+      Alert.alert('Error', 'Could not fetch location.');
+    } finally {
+      setIsLocationLoading(false);
+    }
+  };
+
   // ── Submit ─────────────────────────────────────────────────────────────────
 
   const handleFinish = async () => {
@@ -257,7 +292,7 @@ export default function ProfileSetup() {
         photoURL: finalPhotoURL,
         email: firebaseUser.email,
         bio: '',
-        location: { city: '', country: '' },
+        location: location || { city: '', country: '' },
         teachSkills: skillsOffered,
         wantSkills: skillsNeeded,
         rating: 0,
@@ -341,6 +376,28 @@ export default function ProfileSetup() {
             placeholder="e.g. Alex Rivera"
             returnKeyType="next"
           />
+        </View>
+
+        {/* ── Location ── */}
+        <View style={styles.section}>
+          <SectionHeader title="Location 📍" hint="Where are you based?" />
+          <TouchableOpacity
+            style={styles.locationBtn}
+            onPress={fetchLocation}
+            disabled={isLocationLoading}
+            activeOpacity={0.7}
+          >
+            {isLocationLoading ? (
+              <ActivityIndicator color="#ff1a5c" size="small" />
+            ) : location ? (
+              <Text style={styles.locationTextFilled}>
+                {location.city}, {location.country}
+              </Text>
+            ) : (
+              <Text style={styles.locationTextEmpty}>Tap to auto-fill location</Text>
+            )}
+            <MapPin size={18} color="rgba(255,26,92,0.8)" />
+          </TouchableOpacity>
         </View>
 
         {/* ── Skills I Teach ── */}
@@ -575,7 +632,27 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // ── Input
+  // ── Input & Location
+  locationBtn: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    height: 50,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  locationTextEmpty: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 15,
+  },
+  locationTextFilled: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '500',
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,49 +1,55 @@
-import { useEffect, useState } from 'react';
-import firestore from '@react-native-firebase/firestore';
+import { useEffect } from 'react';
+import firestore, { collection, query, where, orderBy, limit, getDocs } from '@react-native-firebase/firestore';
+import { useDispatch, useSelector } from 'react-redux';
 import { UserDocument } from '../types/user';
 import { getSwipedUserIds } from '../services/matchingService';
+import { appendFeed, setIsPaginating, setSwipedIds } from '../store/discoverySlice';
+import type { RootState } from '../store';
 
 /**
  * Hook to fetch users for the Discovery Feed (Swipe Cards).
- * It fetches a batch of users and filters out anyone the current user
- * has already swiped on (liked or passed).
+ * It transparently hydrates the Redux `discoverySlice` when the feed array drops below 5 elements.
  */
 export const useDiscoveryFeed = (currentUid: string | null) => {
-  const [users, setUsers] = useState<UserDocument[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const dispatch = useDispatch();
+  const feed = useSelector((state: RootState) => state.discovery.feed);
+  const isPaginating = useSelector((state: RootState) => state.discovery.isPaginating);
+  const swipedIdsMap = useSelector((state: RootState) => state.discovery.swipedIds);
 
   useEffect(() => {
-    if (!currentUid) {
-      setUsers([]);
-      setLoading(false);
-      return;
-    }
+    if (!currentUid) return;
 
-    let isMounted = true;
+    // Only fetch if the feed is running low and we aren't already paginating
+    if (feed.length > 5 || isPaginating) return;
 
     const fetchFeed = async () => {
       try {
-        setLoading(true);
+        dispatch(setIsPaginating(true));
 
         // 1. Get all UIDs this user has already swiped on
-        const swipedIds = await getSwipedUserIds(currentUid);
-        
+        let currentSwipedIds = Object.keys(swipedIdsMap);
+        if (currentSwipedIds.length === 0) {
+          const fetchedIds = await getSwipedUserIds(currentUid);
+          dispatch(setSwipedIds(fetchedIds));
+          currentSwipedIds = fetchedIds;
+        }
+
         // Always exclude self
-        const excludedIds = new Set([...swipedIds, currentUid]);
+        const excludedIds = new Set([...currentSwipedIds, currentUid]);
 
         // 2. Fetch a batch of potential users
-        // Note: For a real app at scale, you'd use geo-queries or Algolia here.
         // For MVP, we fetch 20 active profiles with completed setups.
-        const snapshot = await firestore()
-          .collection('users')
-          .where('isProfileComplete', '==', true)
-          .orderBy('rating', 'desc')
-          .limit(20)
-          .get();
+        const usersRef = collection(firestore(), 'users');
+        const q = query(
+          usersRef,
+          where('isProfileComplete', '==', true),
+          orderBy('rating', 'desc'),
+          limit(20)
+        );
+        const snapshot = await getDocs(q);
 
         const fetchedUsers: UserDocument[] = [];
-        snapshot.docs.forEach((doc) => {
+        snapshot.docs.forEach((doc: any) => {
           const data = doc.data() as UserDocument;
           // 3. Filter client-side
           if (!excludedIds.has(data.uid)) {
@@ -51,24 +57,16 @@ export const useDiscoveryFeed = (currentUid: string | null) => {
           }
         });
 
-        if (isMounted) {
-          setUsers(fetchedUsers);
-          setError(null);
-        }
+        dispatch(appendFeed(fetchedUsers));
       } catch (err: any) {
         console.error('Error fetching discovery feed:', err);
-        if (isMounted) setError(err);
       } finally {
-        if (isMounted) setLoading(false);
+        dispatch(setIsPaginating(false));
       }
     };
 
     fetchFeed();
+  }, [currentUid, feed.length, isPaginating, swipedIdsMap, dispatch]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUid]);
-
-  return { users, loading, error, setUsers }; // Expose setUsers so we can slice the array when swiping
+  return { users: feed, loading: feed.length === 0 && isPaginating }; 
 };

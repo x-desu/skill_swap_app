@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootState } from '../../src/store';
-import { useMatches } from '../../src/hooks/useMatches';
 import UserAvatar from '../../src/components/UserAvatar';
 import type { MatchDocument } from '../../src/types/user';
 
@@ -21,7 +20,8 @@ export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const authUser = useSelector((state: RootState) => state.auth.user);
-  const { matches, loading, error } = useMatches(authUser?.uid || null);
+  const matches = useSelector((state: RootState) => state.matches.list);
+  const hasLoadedOnce = useSelector((state: RootState) => state.matches.hasLoadedOnce);
 
   const handlePressMatch = (match: MatchDocument) => {
     if (!authUser) return;
@@ -73,7 +73,7 @@ export default function MessagesScreen() {
     );
   };
 
-  if (loading) {
+  if (!hasLoadedOnce) {
     return (
       <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color={COLORS.rosePrimary} />

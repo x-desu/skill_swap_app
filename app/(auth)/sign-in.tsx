@@ -27,10 +27,10 @@ export default function SignIn() {
 
   // Redirect after sign-in — fires after screen is mounted (navigator already ready)
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isLoading) {
       router.replace(isProfileComplete ? '/(tabs)' : '/(auth)/profile-setup');
     }
-  }, [isAuthenticated, isProfileComplete]);
+  }, [isAuthenticated, isProfileComplete, isLoading]);
 
   const handleEmailSignIn = async () => {
     if (!email || !password) return;
