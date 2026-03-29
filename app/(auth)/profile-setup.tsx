@@ -1,17 +1,10 @@
 /**
  * profile-setup.tsx
- * Premium, fully refactored profile setup screen for SkillSwap.
- *
- * Extracted components: SkillChip, SuggestionChip, SectionHeader, StyledInput
- * Fixes:
- *  - Chip tap now always adds to skill list (was missing state update on suggestion tap)
- *  - Proper flexWrap with rowGap + columnGap for chip clouds
- *  - Focus border on text inputs
- *  - Keyboard push-up without breaking layout (KeyboardAvoidingView + ScrollView)
- *  - Scale animation on chip add, spring dismiss on remove
- *  - Consistent 8px spacing system throughout
+ * - Image crop fix: uses new MediaType API + presentationStyle fullScreen
+ * - Categorized skill autocomplete: live dropdown as user types
+ * - Zero new dependencies
  */
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -37,53 +30,91 @@ import { setProfileComplete } from '../../src/store/authSlice';
 import { uploadProfilePhoto } from '../../src/services/storageService';
 import { upsertUserProfile } from '../../src/services/firestoreService';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Skill Taxonomy ───────────────────────────────────────────────────────────
 
-const TEACH_SUGGESTIONS = [
-  'Python', 'Design', 'React', 'Photography', 'Music',
-  'Marketing', 'Excel', 'Video Editing', 'Drawing', 'Writing', 'Spanish', 'French',
-];
+const SKILL_TAXONOMY: Record<string, string[]> = {
+  '💻 Tech': [
+    'Python', 'JavaScript', 'TypeScript', 'React', 'React Native', 'Node.js',
+    'Swift', 'Kotlin', 'Flutter', 'Java', 'C++', 'Rust', 'Go', 'SQL',
+    'MongoDB', 'Firebase', 'AWS', 'Docker', 'Git', 'Machine Learning',
+    'Data Science', 'UI/UX Design', 'Figma', 'Cybersecurity', 'DevOps',
+    'Blockchain', 'Web3', 'Excel / Sheets', 'PowerPoint', 'Notion',
+  ],
+  '🎨 Creative': [
+    'Photography', 'Video Editing', 'Drawing', 'Illustration', 'Painting',
+    'Graphic Design', 'Logo Design', 'Animation', '3D Modeling', 'Blender',
+    'Adobe Photoshop', 'Adobe Illustrator', 'Lightroom', 'Canva',
+    'Comic Art', 'Calligraphy', 'Pottery', 'Textile Design', 'Fashion Design',
+  ],
+  '🎵 Music': [
+    'Guitar', 'Piano', 'Violin', 'Drums', 'Bass Guitar', 'Ukulele',
+    'Singing', 'Songwriting', 'Music Production', 'DJ', 'Beatmaking',
+    'Music Theory', 'Flute', 'Saxophone', 'Tabla', 'Sitar',
+  ],
+  '💬 Languages': [
+    'English', 'Spanish', 'French', 'German', 'Mandarin', 'Japanese',
+    'Korean', 'Arabic', 'Hindi', 'Portuguese', 'Italian', 'Russian',
+    'Turkish', 'Dutch', 'Swedish', 'Sign Language',
+  ],
+  '💪 Fitness': [
+    'Yoga', 'Meditation', 'Gym Training', 'Calisthenics', 'CrossFit',
+    'Running', 'Swimming', 'Cycling', 'Pilates', 'Martial Arts', 'Boxing',
+    'Dance', 'Zumba', 'Nutrition & Diet', 'Rock Climbing',
+  ],
+  '🍳 Cooking': [
+    'Cooking', 'Baking', 'Pastry & Desserts', 'Indian Cuisine', 'Italian Cuisine',
+    'Japanese Cuisine', 'Vegan Cooking', 'BBQ & Grilling', 'Cocktail Making',
+    'Coffee Brewing', 'Meal Prep', 'Fermentation',
+  ],
+  '📈 Business': [
+    'Marketing', 'Digital Marketing', 'SEO', 'Social Media', 'Content Writing',
+    'Copywriting', 'Entrepreneurship', 'Finance', 'Investing', 'Accounting',
+    'Product Management', 'Sales', 'Public Speaking', 'Leadership',
+    'Project Management', 'Business Strategy',
+  ],
+  '🎓 Academic': [
+    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'History',
+    'Economics', 'Psychology', 'Philosophy', 'Literature', 'Writing',
+    'Research', 'Statistics', 'Architecture',
+  ],
+  '🛠️ Practical': [
+    'Carpentry', 'Plumbing', 'Electrical Work', 'Gardening', 'Home Repair',
+    'Sewing', 'Knitting', 'Car Maintenance', '3D Printing', 'Electronics',
+  ],
+};
 
-const LEARN_SUGGESTIONS = [
-  'Guitar', 'Cooking', 'UI/UX', 'JavaScript', 'Public Speaking',
-  'French', 'Spanish', 'Fitness', 'Data Science', 'Photography', 'Drawing', 'Piano',
-];
+// Flat list with category labels for search
+const ALL_SKILLS: Array<{ skill: string; category: string }> = Object.entries(
+  SKILL_TAXONOMY,
+).flatMap(([category, skills]) => skills.map((skill) => ({ skill, category })));
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const ACCENT = '#ff1a5c';
 const BG_DARK = '#0d0202';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-interface SkillChipProps {
+function SkillChip({
+  label,
+  onRemove,
+  color = '#ff1a5c',
+}: {
   label: string;
   onRemove: () => void;
-  color?: string; // accent color for border/bg
-}
-
-function SkillChip({ label, onRemove, color = '#ff1a5c' }: SkillChipProps) {
+  color?: string;
+}) {
   const scale = useRef(new Animated.Value(0.7)).current;
-
-  // Mount animation
-  Animated.spring(scale, {
-    toValue: 1,
-    useNativeDriver: true,
-    tension: 200,
-    friction: 12,
-  }).start();
+  Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 12 }).start();
 
   const handleRemove = () => {
-    Animated.spring(scale, {
-      toValue: 0,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 8,
-    }).start(onRemove);
+    Animated.spring(scale, { toValue: 0, useNativeDriver: true, tension: 300, friction: 8 }).start(onRemove);
   };
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <View style={[styles.chip, { backgroundColor: color + '22', borderColor: color + '66' }]}>
-        <Text style={[styles.chipText, { color: '#fff' }]}>{label}</Text>
+        <Text style={styles.chipText}>{label}</Text>
         <TouchableOpacity onPress={handleRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <X size={13} color="rgba(255,255,255,0.7)" strokeWidth={2.5} />
         </TouchableOpacity>
@@ -92,12 +123,7 @@ function SkillChip({ label, onRemove, color = '#ff1a5c' }: SkillChipProps) {
   );
 }
 
-interface SuggestionChipProps {
-  label: string;
-  onPress: () => void;
-}
-
-function SuggestionChip({ label, onPress }: SuggestionChipProps) {
+function SuggestionChip({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <TouchableOpacity
       style={styles.suggestionChip}
@@ -111,12 +137,7 @@ function SuggestionChip({ label, onPress }: SuggestionChipProps) {
   );
 }
 
-interface SectionHeaderProps {
-  title: string;
-  hint: string;
-}
-
-function SectionHeader({ title, hint }: SectionHeaderProps) {
+function SectionHeader({ title, hint }: { title: string; hint: string }) {
   return (
     <View style={styles.sectionHeaderWrap}>
       <Text style={styles.label}>{title}</Text>
@@ -125,34 +146,91 @@ function SectionHeader({ title, hint }: SectionHeaderProps) {
   );
 }
 
-interface StyledInputProps {
+// ─── Skill Input with Autocomplete ───────────────────────────────────────────
+
+function SkillInputWithAutocomplete({
+  value,
+  onChangeText,
+  placeholder,
+  selectedSkills,
+  onAdd,
+  accentColor,
+}: {
   value: string;
   onChangeText: (v: string) => void;
   placeholder: string;
-  onSubmitEditing?: () => void;
-  returnKeyType?: 'done' | 'next' | 'send';
-  autoFocus?: boolean;
-}
-
-function StyledInput({
-  value, onChangeText, placeholder, onSubmitEditing, returnKeyType = 'done', autoFocus,
-}: StyledInputProps) {
+  selectedSkills: string[];
+  onAdd: (skill: string) => void;
+  accentColor: string;
+}) {
   const [focused, setFocused] = useState(false);
+
+  const suggestions = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q || q.length < 2) return [];
+    return ALL_SKILLS
+      .filter(
+        ({ skill }) =>
+          skill.toLowerCase().includes(q) &&
+          !selectedSkills.some((s) => s.toLowerCase() === skill.toLowerCase()),
+      )
+      .slice(0, 6);
+  }, [value, selectedSkills]);
+
+  const showDropdown = focused && suggestions.length > 0;
+
   return (
-    <TextInput
-      style={[styles.input, focused && styles.inputFocused]}
-      placeholder={placeholder}
-      placeholderTextColor="rgba(255,255,255,0.22)"
-      value={value}
-      onChangeText={onChangeText}
-      onSubmitEditing={onSubmitEditing}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      returnKeyType={returnKeyType}
-      autoCorrect={false}
-      autoCapitalize="words"
-      autoFocus={autoFocus}
-    />
+    <View style={{ position: 'relative', zIndex: 10 }}>
+      <View style={styles.inputRow}>
+        <View style={{ flex: 1 }}>
+          <TextInput
+            style={[styles.input, focused && styles.inputFocused, focused && { borderColor: accentColor + 'AA' }]}
+            placeholder={placeholder}
+            placeholderTextColor="rgba(255,255,255,0.22)"
+            value={value}
+            onChangeText={onChangeText}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setTimeout(() => setFocused(false), 150)}
+            onSubmitEditing={() => {
+              if (value.trim()) onAdd(value.trim());
+            }}
+            returnKeyType="done"
+            autoCorrect={false}
+            autoCapitalize="words"
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.addBtn, !value.trim() && styles.addBtnDisabled, { backgroundColor: accentColor }]}
+          onPress={() => { if (value.trim()) onAdd(value.trim()); }}
+          activeOpacity={0.7}
+        >
+          <Plus size={18} color="#fff" strokeWidth={2.5} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Autocomplete Dropdown */}
+      {showDropdown && (
+        <View style={styles.dropdown}>
+          {suggestions.map(({ skill, category }) => (
+            <TouchableOpacity
+              key={skill}
+              style={styles.dropdownRow}
+              onPress={() => {
+                onAdd(skill);
+                onChangeText('');
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.dropdownRowInner}>
+                <Text style={styles.dropdownSkill}>{skill}</Text>
+                <Text style={styles.dropdownCategory}>{category}</Text>
+              </View>
+              <Plus size={14} color={accentColor} strokeWidth={2.5} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -183,7 +261,6 @@ export default function ProfileSetup() {
     ) => {
       const trimmed = val.trim();
       if (!trimmed) return;
-      // Prevent duplicates (case-insensitive)
       if (list.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
         setInput('');
         return;
@@ -205,10 +282,13 @@ export default function ProfileSetup() {
 
   const pickPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      // Use new string array API (MediaTypeOptions is deprecated in v17)
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.85,
+      // FULL_SCREEN forces iOS native crop UI to appear correctly
+      presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN,
     });
     if (!result.canceled) setPhotoUri(result.assets[0].uri);
   };
@@ -223,6 +303,7 @@ export default function ProfileSetup() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.85,
+      presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN,
     });
     if (!result.canceled) setPhotoUri(result.assets[0].uri);
   };
@@ -246,13 +327,11 @@ export default function ProfileSetup() {
         Alert.alert('Permission needed', 'Location access is required to auto-fill your area.');
         return;
       }
-
       const locationData = await Location.getCurrentPositionAsync({});
       const geocode = await Location.reverseGeocodeAsync({
         latitude: locationData.coords.latitude,
         longitude: locationData.coords.longitude,
       });
-
       if (geocode.length > 0) {
         const place = geocode[0];
         setLocation({
@@ -314,18 +393,18 @@ export default function ProfileSetup() {
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  // Filter suggestions: exclude already-selected, show up to 8
-  const teachSuggestions = TEACH_SUGGESTIONS.filter(
-    (s) => !skillsOffered.some((o) => o.toLowerCase() === s.toLowerCase()),
-  ).slice(0, 8);
+  // Default suggestion chips (shown when input is empty) — exclude already selected
+  const teachSuggestions = ['Python', 'Design', 'React', 'Photography', 'Music', 'Marketing', 'Guitar', 'Cooking']
+    .filter((s) => !skillsOffered.some((o) => o.toLowerCase() === s.toLowerCase()))
+    .slice(0, 6);
 
-  const learnSuggestions = LEARN_SUGGESTIONS.filter(
-    (s) => !skillsNeeded.some((n) => n.toLowerCase() === s.toLowerCase()),
-  ).slice(0, 8);
+  const learnSuggestions = ['Guitar', 'UI/UX', 'JavaScript', 'Public Speaking', 'French', 'Fitness', 'Piano', 'Yoga']
+    .filter((s) => !skillsNeeded.some((n) => n.toLowerCase() === s.toLowerCase()))
+    .slice(0, 6);
 
   const canSubmit = displayName.trim().length > 0;
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <KeyboardAvoidingView
@@ -342,6 +421,7 @@ export default function ProfileSetup() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
       >
         {/* ── Header ── */}
         <Text style={styles.title}>Set up your profile</Text>
@@ -369,11 +449,15 @@ export default function ProfileSetup() {
         {/* ── Name ── */}
         <View style={styles.section}>
           <SectionHeader title="Your Name" hint="What should people call you?" />
-          <StyledInput
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Alex Rivera"
+            placeholderTextColor="rgba(255,255,255,0.22)"
             value={displayName}
             onChangeText={setDisplayName}
-            placeholder="e.g. Alex Rivera"
             returnKeyType="next"
+            autoCorrect={false}
+            autoCapitalize="words"
           />
         </View>
 
@@ -400,36 +484,21 @@ export default function ProfileSetup() {
         </View>
 
         {/* ── Skills I Teach ── */}
-        <View style={styles.section}>
+        <View style={[styles.section, { zIndex: 20 }]}>
           <SectionHeader
             title="Skills you can teach 🎓"
-            hint="Type a skill and press Return — or tap a suggestion"
+            hint="Type to search categories, or tap a suggestion"
           />
 
-          {/* Input row */}
-          <View style={styles.inputRow}>
-            <View style={{ flex: 1 }}>
-              <StyledInput
-                value={offerInput}
-                onChangeText={setOfferInput}
-                placeholder="e.g. Python, Guitar..."
-                onSubmitEditing={() =>
-                  addSkill(skillsOffered, setSkillsOffered, offerInput, setOfferInput)
-                }
-              />
-            </View>
-            <TouchableOpacity
-              style={[styles.addBtn, !offerInput.trim() && styles.addBtnDisabled, { backgroundColor: '#ff1a5c' }]}
-              onPress={() =>
-                addSkill(skillsOffered, setSkillsOffered, offerInput, setOfferInput)
-              }
-              activeOpacity={0.7}
-            >
-              <Plus size={18} color="#fff" strokeWidth={2.5} />
-            </TouchableOpacity>
-          </View>
+          <SkillInputWithAutocomplete
+            value={offerInput}
+            onChangeText={setOfferInput}
+            placeholder="e.g. Python, Guitar, Cooking…"
+            selectedSkills={skillsOffered}
+            onAdd={(skill) => addSkill(skillsOffered, setSkillsOffered, skill, setOfferInput)}
+            accentColor="#ff1a5c"
+          />
 
-          {/* Selected chips */}
           {skillsOffered.length > 0 && (
             <View style={styles.chipCloud}>
               {skillsOffered.map((s) => (
@@ -443,8 +512,7 @@ export default function ProfileSetup() {
             </View>
           )}
 
-          {/* Suggestion chips */}
-          {teachSuggestions.length > 0 && (
+          {offerInput.trim().length < 2 && teachSuggestions.length > 0 && (
             <View style={styles.chipCloud}>
               {teachSuggestions.map((s) => (
                 <SuggestionChip
@@ -452,7 +520,7 @@ export default function ProfileSetup() {
                   label={s}
                   onPress={() => {
                     setSkillsOffered((prev) =>
-                      prev.some((p) => p.toLowerCase() === s.toLowerCase()) ? prev : [...prev, s]
+                      prev.some((p) => p.toLowerCase() === s.toLowerCase()) ? prev : [...prev, s],
                     );
                   }}
                 />
@@ -462,33 +530,20 @@ export default function ProfileSetup() {
         </View>
 
         {/* ── Skills I Want ── */}
-        <View style={styles.section}>
+        <View style={[styles.section, { zIndex: 10 }]}>
           <SectionHeader
             title="Skills you want to learn 🎯"
             hint="What do you want to get better at?"
           />
 
-          <View style={styles.inputRow}>
-            <View style={{ flex: 1 }}>
-              <StyledInput
-                value={needInput}
-                onChangeText={setNeedInput}
-                placeholder="e.g. Spanish, Photoshop..."
-                onSubmitEditing={() =>
-                  addSkill(skillsNeeded, setSkillsNeeded, needInput, setNeedInput)
-                }
-              />
-            </View>
-            <TouchableOpacity
-              style={[styles.addBtn, !needInput.trim() && styles.addBtnDisabled, { backgroundColor: ACCENT }]}
-              onPress={() =>
-                addSkill(skillsNeeded, setSkillsNeeded, needInput, setNeedInput)
-              }
-              activeOpacity={0.7}
-            >
-              <Plus size={18} color="#fff" strokeWidth={2.5} />
-            </TouchableOpacity>
-          </View>
+          <SkillInputWithAutocomplete
+            value={needInput}
+            onChangeText={setNeedInput}
+            placeholder="e.g. Spanish, Photoshop…"
+            selectedSkills={skillsNeeded}
+            onAdd={(skill) => addSkill(skillsNeeded, setSkillsNeeded, skill, setNeedInput)}
+            accentColor={ACCENT}
+          />
 
           {skillsNeeded.length > 0 && (
             <View style={styles.chipCloud}>
@@ -503,7 +558,7 @@ export default function ProfileSetup() {
             </View>
           )}
 
-          {learnSuggestions.length > 0 && (
+          {needInput.trim().length < 2 && learnSuggestions.length > 0 && (
             <View style={styles.chipCloud}>
               {learnSuggestions.map((s) => (
                 <SuggestionChip
@@ -511,7 +566,7 @@ export default function ProfileSetup() {
                   label={s}
                   onPress={() => {
                     setSkillsNeeded((prev) =>
-                      prev.some((p) => p.toLowerCase() === s.toLowerCase()) ? prev : [...prev, s]
+                      prev.some((p) => p.toLowerCase() === s.toLowerCase()) ? prev : [...prev, s],
                     );
                   }}
                 />
@@ -562,7 +617,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  // ── Header
   title: {
     fontSize: 28,
     fontWeight: '800',
@@ -577,7 +631,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // ── Photo
   photoSection: {
     alignItems: 'center',
     marginBottom: 32,
@@ -615,7 +668,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ── Section
   section: { marginBottom: 28 },
   sectionHeaderWrap: { marginBottom: 10 },
   label: {
@@ -631,7 +683,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // ── Input & Location
   locationBtn: {
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 12,
@@ -643,20 +694,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
-  locationTextEmpty: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 15,
-  },
-  locationTextFilled: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '500',
-  },
+  locationTextEmpty: { color: 'rgba(255,255,255,0.4)', fontSize: 15 },
+  locationTextFilled: { color: '#fff', fontSize: 15, fontWeight: '500' },
+
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 4,
   },
   input: {
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -682,13 +727,44 @@ const styles = StyleSheet.create({
   },
   addBtnDisabled: { opacity: 0.35 },
 
-  // ── Chips
+  // Autocomplete dropdown
+  dropdown: {
+    position: 'absolute',
+    top: 56,
+    left: 0,
+    right: 58, // leave room for add button
+    backgroundColor: '#1e0a0d',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,26,92,0.25)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+    zIndex: 999,
+  },
+  dropdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  dropdownRowInner: { flex: 1, marginRight: 8 },
+  dropdownSkill: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  dropdownCategory: { color: 'rgba(255,255,255,0.38)', fontSize: 11, marginTop: 2 },
+
   chipCloud: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     rowGap: 8,
     columnGap: 8,
-    marginBottom: 10,
+    marginTop: 10,
+    marginBottom: 6,
   },
   chip: {
     flexDirection: 'row',
@@ -699,11 +775,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
-  },
+  chipText: { fontSize: 13, fontWeight: '600', color: '#fff' },
   suggestionChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -721,7 +793,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ── Actions
   actions: { marginTop: 8 },
   submitBtn: {
     backgroundColor: '#ff1a5c',
@@ -736,23 +807,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
   },
   submitDisabled: { opacity: 0.35, shadowOpacity: 0 },
-  submitInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  submitText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 0.2,
-  },
-  skipBtn: {
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  skipText: {
-    color: 'rgba(255,255,255,0.28)',
-    fontSize: 14,
-  },
+  submitInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  submitText: { fontSize: 16, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
+  skipBtn: { alignItems: 'center', paddingVertical: 10 },
+  skipText: { color: 'rgba(255,255,255,0.28)', fontSize: 14 },
 });
