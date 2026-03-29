@@ -1,236 +1,235 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { GiftedChat, Bubble, Send, InputToolbar } from 'react-native-gifted-chat';
-import { useDispatch, useSelector } from 'react-redux';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Text,
+  Alert,
+  FlatList,
+} from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { useSelector } from 'react-redux';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import * as ImagePicker from 'expo-image-picker';
 
 import type { RootState } from '../../src/store';
-import { setRoomMessages } from '../../src/store/chatSlice';
-import { sendMessage, listenToMessages } from '../../src/services/chatService';
+import { useChat } from '../../src/hooks/useChat';
+import { useSendMessage } from '../../src/hooks/useSendMessage';
+import { useTyping } from '../../src/hooks/useTyping';
+import { markMatchAsRead } from '../../src/services/chatService';
+import { getUserProfile } from '../../src/services/firestoreService';
+import { getMatchById } from '../../src/services/matchingService';
 import type { MessageDocument } from '../../src/types/user';
-import UserAvatar from '../../src/components/UserAvatar';
 
-const COLORS = {
-  rosePrimary: '#ff1a5c',
-  bgDark: '#1a0505',
-  bgBase: '#0d0202',
-  bubbleRight: '#ff1a5c',
-  bubbleLeft: 'rgba(255, 255, 255, 0.1)',
-  textPrimary: '#ffffff',
-  textSecondary: 'rgba(255, 255, 255, 0.7)',
-  borderLight: 'rgba(255, 255, 255, 0.1)',
-};
+import { ChatHeader } from '../../src/components/ChatHeader';
+import { ChatBubble } from '../../src/components/ChatBubble';
+import { ChatInput } from '../../src/components/ChatInput';
+import { ChatSkeleton } from '../../src/components/ChatSkeleton';
 
 export default function ChatRoomScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const dispatch = useDispatch();
   const authUser = useSelector((state: RootState) => state.auth.user);
+  const flatListRef = useRef<FlatList<MessageDocument>>(null);
 
   const matchId = params.id as string;
-  const targetUid = params.targetUid as string;
-  
-  // If coming from Match Celebration, we have name & photo. Otherwise just UID.
-  const targetName = (params.name as string) || `Match (${targetUid?.slice(0, 4)}...)`;
-  const targetPhoto = (params.photoURL as string) || '';
+  const routeTargetUid = params.targetUid as string | undefined;
+  const routeTargetName = (params.name as string) || '';
+  const routeTargetPhoto = (params.photoURL as string) || '';
+  const [resolvedTargetUid, setResolvedTargetUid] = useState<string>(routeTargetUid || '');
+  const [resolvedTargetName, setResolvedTargetName] = useState<string>(routeTargetName);
+  const [resolvedTargetPhoto, setResolvedTargetPhoto] = useState<string>(routeTargetPhoto);
 
-  const initialMessages = useSelector((state: RootState) => state.chat.rooms[matchId] || []);
-  const [messages, setMessages] = useState<MessageDocument[]>(initialMessages);
+  const {
+    messages,
+    loading,
+    addOptimisticMessage,
+  } = useChat(matchId, authUser?.uid);
 
-  // ── Real-time Listener ──
-  // Mounts the Firestore read listener exactly when this screen opens.
-  // Automatically unsubscribes when this screen closes.
+  const { send } = useSendMessage(matchId, resolvedTargetUid, addOptimisticMessage);
+  const { onTextInput, otherUserTyping } = useTyping(matchId, authUser?.uid || '', resolvedTargetUid);
+
+  const headerName = useMemo(() => resolvedTargetName || routeTargetName || 'Match', [resolvedTargetName, routeTargetName]);
+  const headerPhoto = useMemo(() => resolvedTargetPhoto || routeTargetPhoto || '', [resolvedTargetPhoto, routeTargetPhoto]);
+
   useEffect(() => {
-    if (!matchId) return;
-    
-    const unsubscribe = listenToMessages(matchId, (newMessages) => {
-      setMessages(newMessages);
-      dispatch(setRoomMessages({ roomId: matchId, messages: newMessages }));
-    });
+    if (messages.length > 0) {
+      // Inverted list: newest is at index 0. Scroll to start.
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    }
+  }, [messages.length]);
 
-    return () => unsubscribe();
-  }, [matchId, dispatch]);
+  useEffect(() => {
+    // Basic validation to prevent firestore-not-found errors if matchId is invalid
+    if (matchId && matchId !== 'undefined' && matchId !== 'null' && authUser?.uid) {
+      markMatchAsRead(matchId, authUser.uid).catch(err => {
+        console.warn('[ChatRoom] Failed to mark match as read:', err.message);
+      });
+    }
+  }, [matchId, authUser?.uid]);
 
-  const onSend = useCallback(
-    async (newMessages: MessageDocument[] = []) => {
-      if (!matchId || !authUser) return;
+  useEffect(() => {
+    let cancelled = false;
 
-      const messageToSave = newMessages[0];
-      if (!messageToSave) return;
-
-      // Optimistic update
-      setMessages((previousMessages) =>
-        GiftedChat.append(previousMessages, newMessages) as MessageDocument[]
-      );
-
-      // Write to Firestore
-      try {
-        await sendMessage(matchId, {
-          ...messageToSave,
-          user: {
-            _id: authUser.uid,
-            name: authUser.displayName || 'Me',
-            avatar: authUser.photoURL || undefined,
-          },
-        });
-      } catch (err) {
-        console.error('Failed to send message:', err);
+    const resolveTargetProfile = async () => {
+      if (!matchId || !authUser?.uid) {
+        return;
       }
+
+      let targetUid = routeTargetUid || '';
+
+      if (!targetUid) {
+        try {
+          const match = await getMatchById(matchId);
+          targetUid = match?.users?.find((uid) => uid !== authUser.uid) || '';
+        } catch (error) {
+          console.warn('[ChatRoom] Failed to resolve match participants:', error);
+        }
+      }
+
+      if (!targetUid || cancelled) {
+        return;
+      }
+
+      setResolvedTargetUid(targetUid);
+
+      try {
+        const profile = await getUserProfile(targetUid);
+
+        if (cancelled) {
+          return;
+        }
+
+        setResolvedTargetName(profile?.displayName || routeTargetName || 'Match');
+        setResolvedTargetPhoto(profile?.photoURL || routeTargetPhoto || '');
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[ChatRoom] Failed to fetch target profile:', error);
+          setResolvedTargetName((current) => current || routeTargetName || 'Match');
+          setResolvedTargetPhoto((current) => current || routeTargetPhoto || '');
+        }
+      }
+    };
+
+    resolveTargetProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.uid, matchId, routeTargetName, routeTargetPhoto, routeTargetUid]);
+
+  const handleSend = useCallback(
+    (text: string) => {
+      if (!authUser) return;
+      send(
+        text,
+        authUser.uid,
+        authUser.displayName || 'Me',
+        authUser.photoURL || undefined
+      );
     },
-    [matchId, authUser]
+    [authUser, send]
   );
 
-  // ── UI Customization ──
+  const handleImagePress = useCallback(async () => {
+    try {
+      const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permResult.granted) {
+        Alert.alert('Permission Needed', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+        allowsEditing: true,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        Alert.alert('📷 Image Selected', 'Image sharing coming soon!');
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to open image picker.');
+    }
+  }, []);
 
-  const renderBubble = (props: any) => {
-    return (
-      <Bubble
-        {...props}
-        wrapperStyle={{
-          right: {
-            backgroundColor: COLORS.bubbleRight,
-          },
-          left: {
-            backgroundColor: COLORS.bubbleLeft,
-          },
-        }}
-        textStyle={{
-          right: { color: COLORS.textPrimary },
-          left: { color: COLORS.textPrimary },
-        }}
-        timeTextStyle={{
-          right: { color: 'rgba(255,255,255,0.5)' },
-          left: { color: 'rgba(255,255,255,0.4)' },
-        }}
-      />
-    );
-  };
+  const handleViewProfile = useCallback(() => {
+    Alert.alert(headerName, 'Profile view coming soon!');
+  }, [headerName]);
 
-  const renderInputToolbar = (props: any) => {
-    return (
-      <InputToolbar
-        {...props}
-        containerStyle={{
-          backgroundColor: COLORS.bgDark,
-          borderTopColor: COLORS.borderLight,
-          borderTopWidth: 1,
-          paddingTop: 4,
-          paddingBottom: Math.max(insets.bottom, 8),
-        }}
-        primaryStyle={{ alignItems: 'center' }}
-      />
-    );
-  };
-
-  const renderSend = (props: any) => {
-    return (
-      <Send {...props} containerStyle={styles.sendContainer}>
-        <Text style={styles.sendText}>Send</Text>
-      </Send>
-    );
-  };
-
-  // Custom Header
-  const renderHeader = () => (
-    <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <ChevronLeft color={COLORS.textPrimary} size={28} />
-      </TouchableOpacity>
-      <View style={styles.headerInfo}>
-        <UserAvatar
-          uid={targetUid}
-          displayName={targetName}
-          photoURL={targetPhoto}
-          size={36}
-        />
-        <Text style={styles.headerName}>{targetName}</Text>
-      </View>
-    </View>
+  const renderItem = ({ item }: { item: MessageDocument }) => (
+    <ChatBubble
+      message={item}
+      isMyMessage={item.user._id === authUser?.uid}
+    />
   );
 
   if (!authUser) return null;
 
   return (
-    <View style={styles.container}>
-      {renderHeader()}
-      <View style={styles.chatContainer}>
-        <GiftedChat
-          messages={messages as any} // Cast needed due to strict IMessage typing vs Timestamp
-          onSend={(newMessages) => onSend(newMessages as MessageDocument[])}
-          user={{
-            _id: authUser.uid,
-            name: authUser.displayName || 'Me',
-            avatar: authUser.photoURL || undefined,
-          }}
-          renderBubble={renderBubble}
-          renderInputToolbar={renderInputToolbar}
-          renderSend={renderSend}
-          renderAvatarOnTop
-          showAvatarForEveryMessage={false}
-          bottomOffset={insets.bottom > 0 ? insets.bottom : 0}
-          textInputProps={{
-            style: styles.textInput,
-            placeholderTextColor: COLORS.textSecondary,
-          }}
+    <View style={styles.root}>
+      <ChatHeader
+        name={headerName}
+        avatar={headerPhoto}
+        isOnline={false}
+        onViewProfile={handleViewProfile}
+      />
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        {loading && messages.length === 0 ? (
+          <ChatSkeleton />
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderItem}
+            keyExtractor={(item) => item._id}
+            inverted
+            contentContainerStyle={styles.listContent}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            style={styles.flex}
+          />
+        )}
+
+        {otherUserTyping && (
+          <Animated.View entering={FadeIn} style={styles.typingIndicator}>
+            <Text style={styles.typingText}>{headerName} is typing...</Text>
+          </Animated.View>
+        )}
+
+        <ChatInput
+          onSend={handleSend}
+          onType={onTextInput}
+          onImagePress={handleImagePress}
         />
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: COLORS.bgBase,
+    backgroundColor: '#0d0202',
   },
-  chatContainer: {
+  flex: {
     flex: 1,
-    backgroundColor: COLORS.bgBase,
   },
-  header: {
-    backgroundColor: COLORS.bgDark,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  backButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  headerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerName: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  sendContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  sendText: {
-    color: COLORS.rosePrimary,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  textInput: {
-    flex: 1,
-    color: '#fff',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
+  listContent: {
+    paddingHorizontal: 8,
     paddingTop: 8,
     paddingBottom: 8,
-    marginHorizontal: 12,
-    fontSize: 15,
+  },
+  typingIndicator: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  typingText: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
 });

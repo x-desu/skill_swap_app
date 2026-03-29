@@ -1,0 +1,23 @@
+{
+  "title": "SkillSwapでより多くを手に入れよう",
+  "subtitle": "プレミアムリーチ、追加クレジット、優先発見 — いつでもキャンセル可能。",
+  "chip1": "追加クレジット",
+  "chip2": "プレミアム発見",
+  "chip3": "優先スワップ",
+  "restore": "復元",
+  "trust": "App StoreまたはGoogle Playで安全。いつでもキャンセル可能。",
+  "continue": "続ける",
+  "privacy": "プライバシーポリシー",
+  "terms": "利用規約",
+  "otherPlans": "その他のプラン",
+  "loading": "プランを読み込み中…",
+  "error": "サブスクリプションを読み込めませんでした。もう一度お試しください。",
+  "purchaseError": "購入が完了しませんでした。",
+  "restoreDone": "購入を復元しました。",
+  "restoreError": "購入を復元できませんでした。",
+  "markerTitle": "あなた",
+  "popular": "人気",
+  "optimal": "最適",
+  "bestValue": "お得",
+  "purchaseThanks": "ありがとうございます！購入が同期されたら残高が更新されます。"
+}

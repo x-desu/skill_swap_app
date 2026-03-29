@@ -1,0 +1,23 @@
+{
+  "title": "Unlock SkillSwap Premium",
+  "subtitle": "Connect with more people, unlimited swipes, and priority features.",
+  "chip1": "Unlimited swipes",
+  "chip2": "Priority matching",
+  "chip3": "Instant matches",
+  "restore": "Restore",
+  "trust": "Secure payment. Cancel anytime.",
+  "continue": "Get Premium",
+  "privacy": "Privacy",
+  "terms": "Terms",
+  "otherPlans": "Other plans",
+  "loading": "Loading plans…",
+  "error": "Could not load plans. Try again.",
+  "purchaseError": "Purchase failed.",
+  "restoreDone": "Purchases restored.",
+  "restoreError": "Could not restore.",
+  "markerTitle": "You",
+  "popular": "POPULAR",
+  "optimal": "MONTHLY",
+  "bestValue": "YEARLY",
+  "purchaseThanks": "Welcome to Premium!"
+}
