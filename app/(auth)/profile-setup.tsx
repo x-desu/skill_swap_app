@@ -28,7 +28,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getAuth } from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Camera, X, Plus, ChevronRight, MapPin } from 'lucide-react-native';
@@ -160,7 +161,7 @@ function StyledInput({
 
 export default function ProfileSetup() {
   const dispatch = useAuthDispatch();
-  const firebaseUser = getAuth().currentUser;
+  const firebaseUser = auth().currentUser;
 
   const [displayName, setDisplayName] = useState(firebaseUser?.displayName ?? '');
   const [skillsOffered, setSkillsOffered] = useState<string[]>([]);
@@ -169,7 +170,7 @@ export default function ProfileSetup() {
   const [needInput, setNeedInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(firebaseUser?.photoURL ?? null);
-  const [location, setLocation] = useState<{ city: string; country: string; lat?: number; lng?: number } | null>(null);
+  const [location, setLocation] = useState<{ city: string; country: string } | null>(null);
   const [isLocationLoading, setIsLocationLoading] = useState(false);
 
   // ── Skill helpers ──────────────────────────────────────────────────────────
@@ -258,8 +259,6 @@ export default function ProfileSetup() {
         setLocation({
           city: place.city || place.subregion || place.region || 'Unknown',
           country: place.country || 'Unknown',
-          lat: locationData.coords.latitude,
-          lng: locationData.coords.longitude,
         });
       }
     } catch (error) {
@@ -293,18 +292,19 @@ export default function ProfileSetup() {
         photoURL: finalPhotoURL,
         email: firebaseUser.email,
         bio: '',
-        location: location || { city: '', country: '', lat: undefined, lng: undefined },
+        location: location || { city: '', country: '' },
         teachSkills: skillsOffered,
         wantSkills: skillsNeeded,
         rating: 0,
         reviewCount: 0,
         completedSwaps: 0,
+        credits: 10,
         isProfileComplete: true,
         hasPhoto: !!finalPhotoURL,
       });
 
       dispatch(setProfileComplete(true));
-      router.replace('/paywall');
+      router.replace('/(tabs)');
     } catch (e) {
       console.error('Profile setup error:', e);
       Alert.alert('Error', 'Could not save profile. Please try again.');
@@ -537,6 +537,14 @@ export default function ProfileSetup() {
                 <ChevronRight size={20} color="#fff" strokeWidth={2.5} />
               </View>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.skipBtn}
+            onPress={() => dispatch(setProfileComplete(true))}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.skipText}>Skip for now</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

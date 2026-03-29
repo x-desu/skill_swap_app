@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/skillswap-icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/skillswap-icon.png",
       "resizeMode": "contain",
@@ -16,7 +16,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.skillswap.app",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SkillSwap needs access to your location to automatically determine your city and country."
+      }
     },
     "android": {
       "package": "com.skillswap.app",
@@ -26,20 +29,10 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/skillswap-icon.png"
-    },
-    "extra": {
-      "razorpayKeyId": "${RAZORPAY_KEY_ID}",
-      "router": {},
-      "eas": {
-        "projectId": "6842636a-67df-4aed-8533-8e686f247a15"
-      }
     },
     "plugins": [
       "expo-router",
@@ -65,6 +58,12 @@
         {
           "photosPermission": "SkillSwap needs access to your photos to set a profile picture.",
           "cameraPermission": "SkillSwap needs camera access to take a profile photo."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "SkillSwap needs access to your location to automatically determine your city and country."
         }
       ]
     ]

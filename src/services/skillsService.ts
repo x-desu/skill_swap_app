@@ -4,43 +4,25 @@
  * Global skills catalog — used for autocomplete suggestions.
  * The `skills` collection is populated lazily as users add new skills.
  */
-import {
-  getFirestore,
-  collection,
-  query,
-  where,
-  getDocs,
-  getDoc,
-  doc,
-  setDoc,
-  updateDoc,
-  increment,
-  orderBy,
-  limit
-} from '@react-native-firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 import { Skill, SkillCategory } from '../types/user';
 
-const db = () => getFirestore();
-const skillsCol = () => collection(db(), 'skills');
+const skillsCol = () => firestore().collection('skills');
 
 /**
  * Search the global skills catalog by prefix (case-insensitive via nameLower).
  * Returns up to 10 matching skills for autocomplete.
  */
-export const getSkillSuggestions = async (searchQuery: string): Promise<Skill[]> => {
-  if (!searchQuery.trim()) return [];
-  const lower = searchQuery.trim().toLowerCase();
-  
-  const q = query(
-    skillsCol(),
-    where('nameLower', '>=', lower),
-    where('nameLower', '<=', lower + '\uf8ff'),
-    orderBy('nameLower'),
-    limit(10)
-  );
-  
-  const snap = await getDocs(q);
-  return snap.docs.map((d: any) => ({ ...(d.data() as Skill), id: d.id }));
+export const getSkillSuggestions = async (query: string): Promise<Skill[]> => {
+  if (!query.trim()) return [];
+  const lower = query.trim().toLowerCase();
+  const snap = await skillsCol()
+    .where('nameLower', '>=', lower)
+    .where('nameLower', '<=', lower + '\uf8ff')
+    .orderBy('nameLower')
+    .limit(10)
+    .get();
+  return snap.docs.map((d) => ({ ...(d.data() as Skill), id: d.id }));
 };
 
 /**
@@ -53,19 +35,19 @@ export const recordSkillUsage = async (
 ): Promise<void> => {
   // Use the lowercased name as document ID so duplicates merge cleanly
   const id = skillName.toLowerCase().replace(/\s+/g, '_');
-  const ref = doc(skillsCol(), id);
-  const snap = await getDoc(ref);
+  const ref = skillsCol().doc(id);
+  const snap = await ref.get();
 
   if (!snap.exists) {
-    await setDoc(ref, {
+    await ref.set({
       name: skillName,
       nameLower: skillName.toLowerCase(),
       category,
       usageCount: 1,
     });
   } else {
-    await updateDoc(ref, {
-      usageCount: increment(1),
+    await ref.update({
+      usageCount: firestore.FieldValue.increment(1),
     });
   }
 };
@@ -76,19 +58,15 @@ export const recordSkillUsage = async (
  */
 export const getPopularSkills = async (
   category?: SkillCategory,
-  limitCount = 12,
+  limit = 12,
 ): Promise<Skill[]> => {
-  let q = query(skillsCol(), orderBy('usageCount', 'desc'), limit(limitCount));
-  
+  let query = skillsCol().orderBy('usageCount', 'desc').limit(limit);
   if (category) {
-    q = query(
-      skillsCol(),
-      where('category', '==', category),
-      orderBy('usageCount', 'desc'),
-      limit(limitCount)
-    );
+    query = skillsCol()
+      .where('category', '==', category)
+      .orderBy('usageCount', 'desc')
+      .limit(limit);
   }
-  
-  const snap = await getDocs(q);
-  return snap.docs.map((d: any) => ({ ...(d.data() as Skill), id: d.id }));
+  const snap = await query.get();
+  return snap.docs.map((d) => ({ ...(d.data() as Skill), id: d.id }));
 };

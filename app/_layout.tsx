@@ -1,37 +1,16 @@
 import { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Provider, useDispatch } from 'react-redux';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { store } from '../src/store';
 import { setUser, setProfileComplete, setAppLoading } from '../src/store/authSlice';
-import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider';
 import { ThemeProvider } from '../src/context/ThemeContext';
-import { upsertUserProfile } from '../src/services/firestoreService';
-import { initRevenueCat, revenueCatLogIn, revenueCatLogOut } from '../src/services/revenueCatService';
-import * as Notifications from 'expo-notifications';
-import { requestNotificationPermissions, setupNotificationListeners } from '../src/services/notificationService';
+import { listenToUserProfile, upsertUserProfile } from '../src/services/firestoreService';
+import { clearProfile, setProfile } from '../src/store/profileSlice';
+import DataProvider from '../src/components/DataProvider';
 import '../global.css';
-import { setJSExceptionHandler } from 'react-native-exception-handler';
-import Toast from 'react-native-toast-message';
-import AppErrorBoundary from '../src/components/AppErrorBoundary';
-
-setJSExceptionHandler((error, isFatal) => {
-  console.log("GLOBAL ERROR:", error);
-}, true);
-
-// ─── Configure Global Notification Behavior ──────────────────────────────────
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
 
 GoogleSignin.configure({
   webClientId:
@@ -45,7 +24,9 @@ function AppNavigator() {
   // On every login, upsertUserProfile creates the doc if missing (first login)
   // or is a no-op merge (subsequent logins)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(getAuth(), async (firebaseUser) => {
+    let profileUnsubscribe: (() => void) | null = null;
+
+    const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
         // Hold routing until Firestore is checked
         dispatch(setAppLoading(true));
@@ -60,7 +41,6 @@ function AppNavigator() {
             isAnonymous: firebaseUser.isAnonymous,
           }),
         );
-        void initRevenueCat().then(() => revenueCatLogIn(firebaseUser.uid));
         // 2. Create/merge Firestore user document (idempotent)
         // Wrapped in try/catch — silently skips if Firestore rules aren't published yet
         try {
@@ -72,15 +52,15 @@ function AppNavigator() {
             hasPhoto: !!firebaseUser.photoURL,
           });
           
-          dispatch(setProfileComplete(true));
-
-          // 3. Setup Push Notifications (Steps 1 & 2)
-          // We don't await this to avoid blocking the app mount
-          requestNotificationPermissions(firebaseUser.uid);
-
-          // 4. Setup Foreground & Tap Listeners (Steps 5 & 6)
-          const cleanup = setupNotificationListeners();
-          return cleanup;
+          console.log('[SkillSwap Auth] Attaching real-time profile listener...');
+          if (profileUnsubscribe) profileUnsubscribe();
+          
+          profileUnsubscribe = listenToUserProfile(firebaseUser.uid, (doc) => {
+            if (doc) {
+              dispatch(setProfile(doc));
+              dispatch(setProfileComplete(doc.isProfileComplete ?? false));
+            }
+          });
         } catch (e: any) {
           if (e?.code === 'firestore/permission-denied') {
             console.warn('[SkillSwap] Firestore rules not published yet — user doc not synced');
@@ -92,8 +72,12 @@ function AppNavigator() {
           dispatch(setAppLoading(false));
         }
       } else {
-        void revenueCatLogOut();
+        if (profileUnsubscribe) {
+          profileUnsubscribe();
+          profileUnsubscribe = null;
+        }
         dispatch(setUser(null));
+        dispatch(clearProfile());
         dispatch(setProfileComplete(false));
         dispatch(setAppLoading(false));
       }
@@ -101,6 +85,7 @@ function AppNavigator() {
 
     return () => {
       unsubscribe();
+      if (profileUnsubscribe) profileUnsubscribe();
     };
   }, [dispatch]);
 
@@ -114,20 +99,12 @@ function AppNavigator() {
         options={{ presentation: 'modal', headerShown: false }}
       />
       <Stack.Screen
-        name="chat"
-        options={{ headerShown: false, animation: 'slide_from_right' }}
+        name="chat/[id]"
+        options={{ headerShown: true, title: 'Chat', animation: 'slide_from_right' }}
       />
       <Stack.Screen
         name="settings"
         options={{ headerShown: false, presentation: 'modal' }}
-      />
-      <Stack.Screen
-        name="paywall"
-        options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
-      />
-      <Stack.Screen
-        name="customer-center"
-        options={{ headerShown: false, presentation: 'modal', animation: 'slide_from_right' }}
       />
     </Stack>
   );
@@ -135,23 +112,14 @@ function AppNavigator() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={styles.root}>
-      <Provider store={store}>
-        <GluestackUIProvider mode="dark">
-          <ThemeProvider>
-            <AppErrorBoundary>
-              <AppNavigator />
-            </AppErrorBoundary>
-          </ThemeProvider>
-        </GluestackUIProvider>
-      </Provider>
-      <Toast />
-    </GestureHandlerRootView>
+    <Provider store={store}>
+      <GluestackUIProvider mode="dark">
+        <ThemeProvider>
+          <DataProvider>
+            <AppNavigator />
+          </DataProvider>
+        </ThemeProvider>
+      </GluestackUIProvider>
+    </Provider>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-});
