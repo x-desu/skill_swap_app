@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Moon, Sun, Smartphone, LogOut, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, Moon, Sun, Smartphone, LogOut, Trash2, Edit2 } from 'lucide-react-native';
 import { useTheme } from '../src/context/ThemeContext';
 import { useDispatch } from 'react-redux';
 import type { AppDispatch } from '../src/store';
@@ -96,6 +96,11 @@ export default function SettingsScreen() {
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
                     
+                    <TouchableOpacity style={[styles.actionButton, { backgroundColor: isDark ? '#1E1E1E' : '#fff', borderColor: colors.border }]} onPress={() => router.push('/edit-profile')}>
+                        <Edit2 color={colors.text} size={20} />
+                        <Text style={[styles.actionText, { color: colors.text }]}>Edit Profile</Text>
+                    </TouchableOpacity>
+
                     <TouchableOpacity style={[styles.actionButton, { backgroundColor: isDark ? '#1E1E1E' : '#fff', borderColor: colors.border }]} onPress={handleSignOut}>
                         <LogOut color={colors.text} size={20} />
                         <Text style={[styles.actionText, { color: colors.text }]}>Log Out</Text>

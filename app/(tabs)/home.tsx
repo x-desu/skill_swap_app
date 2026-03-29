@@ -150,6 +150,10 @@ export default function HomeScreen() {
   const scrollX = useRef(new Animated.Value(0)).current;
 
   const authUser = useSelector((s: RootState) => s.auth.user);
+  // Prefer the live Firestore profile for photoURL (updated after profile-setup)
+  const firestoreProfile = useSelector((s: RootState) => s.profile.profile);
+  const displayPhoto = firestoreProfile?.photoURL ?? authUser?.photoURL ?? null;
+  const displayName = firestoreProfile?.displayName ?? authUser?.displayName ?? null;
   const { users: fetchedUsers, loading } = useDiscoveryFeed(authUser?.uid || null);
   const { unreadCount } = useNotifications();
 
@@ -193,8 +197,8 @@ export default function HomeScreen() {
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <View style={styles.headerLeft}>
             <UserAvatar
-              photoURL={authUser?.photoURL}
-              displayName={authUser?.displayName}
+              photoURL={displayPhoto}
+              displayName={displayName}
               uid={authUser?.uid}
               size={42}
             />

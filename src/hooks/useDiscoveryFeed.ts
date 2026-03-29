@@ -61,8 +61,10 @@ export const useDiscoveryFeed = (currentUid: string | null) => {
     if (blockedUidRef.current === currentUid) return;
 
     const fetchFeed = async () => {
-      // Re-check via refs inside async fn to avoid stale closure issues
-      if (feedLengthRef.current > 5 || isPaginatingRef.current) return;
+      // Only block if already paginating — let the initial fetch always run
+      // when the feed is empty or we haven't fetched yet (handles hot reload)
+      if (isPaginatingRef.current) return;
+      if (feedLengthRef.current > 5 && hasFetchedOnce) return;
 
       try {
         dispatch(setIsPaginating(true));

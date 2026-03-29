@@ -1,9 +1,11 @@
 import React, { useRef, useEffect, memo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Animated, Image } from 'react-native';
 import { Tabs, router } from 'expo-router';
 import { Home, Search, Heart, User } from 'lucide-react-native';
+import { useSelector } from 'react-redux';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useNotifications } from '../../src/hooks/useNotifications';
+import type { RootState } from '../../src/store';
 
 const { width } = Dimensions.get('window');
 
@@ -68,6 +70,9 @@ function AnimatedTabIcon({
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
     const { unreadCount } = useNotifications();
+    const firestoreProfile = useSelector((s: RootState) => s.profile.profile);
+    const authUser = useSelector((s: RootState) => s.auth.user);
+    const avatarPhoto = firestoreProfile?.photoURL ?? authUser?.photoURL ?? null;
 
     const tabs = [
         { name: 'index', label: 'Home', icon: Home, badge: 0 },
@@ -118,6 +123,37 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                                 navigation.navigate(state.routes[routeIndex].name);
                             }
                         };
+
+                        // ── Profile tab: real avatar or fallback icon ──
+                        if (tab.name === 'profile') {
+                            return (
+                                <TouchableOpacity
+                                    key={tab.name}
+                                    onPress={onPress}
+                                    activeOpacity={0.7}
+                                    style={[
+                                        styles.iconContainer,
+                                        isFocused && styles.iconContainerActive,
+                                    ]}
+                                >
+                                    {avatarPhoto ? (
+                                        <Image
+                                            source={{ uri: avatarPhoto }}
+                                            style={[
+                                                styles.avatarImg,
+                                                isFocused && styles.avatarImgActive,
+                                            ]}
+                                        />
+                                    ) : (
+                                        <IconComponent
+                                            size={22}
+                                            color={isFocused ? COLORS.rosePrimary : COLORS.textMuted}
+                                            fill={isFocused ? COLORS.rose20 : 'transparent'}
+                                        />
+                                    )}
+                                </TouchableOpacity>
+                            );
+                        }
 
                         return (
                             <AnimatedTabIcon
@@ -212,5 +248,16 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 10,
         fontWeight: 'bold',
+    },
+    avatarImg: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    avatarImgActive: {
+        borderColor: COLORS.rosePrimary,
+        borderWidth: 2,
     },
 });

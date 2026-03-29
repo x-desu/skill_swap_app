@@ -54,11 +54,17 @@ export const upsertUserProfile = async (
   const snap = await getDoc(ref);
 
   if (snap.data() !== undefined) {
-    // Document exists — only update the specific fields provided
-    await updateDoc(ref, {
-      ...data,
-      updatedAt: serverTimestamp(),
-    });
+    // Document exists — only update the specific fields provided, 
+    // but filter out empty/null values to avoid wiping out a completed profile.
+    const updateData: any = { updatedAt: serverTimestamp() };
+    if (data.email) updateData.email = data.email;
+    if (data.displayName) updateData.displayName = data.displayName;
+    if (data.photoURL) {
+      updateData.photoURL = data.photoURL;
+      updateData.hasPhoto = true;
+    }
+    
+    await updateDoc(ref, updateData);
   } else {
     // New document — inject all required default values
     await setDoc(ref, {

@@ -1,455 +1,551 @@
-# SkillSwap Video Call Feature SRS
+# SkillSwap Video Calling SRS
 
-Version: 1.0
+Version: 2.0
 Date: 2026-03-30
-Owner: SkillSwap Product + Engineering
+Owner: SkillSwap Engineering
+Status: Compatibility-first revision for the current codebase
 
 ---
 
 ## 1. Purpose
 
-This document specifies the functional and technical requirements for a peer-to-peer video calling feature in SkillSwap that allows matched users to have secure video calls within the chat interface.
+This document defines a video calling plan that fits the current SkillSwap app without assuming native dependencies or platform behavior that the repository does not already support.
 
-Primary capabilities:
-1. One-to-one video calls between matched users
-2. Audio-only mode fallback
-3. Call signaling via Firebase (no external signaling server needed)
-4. Screen sharing capability
-5. Optimized for mobile networks with low bandwidth handling
+This revision replaces the earlier provider proposal with a build-safe approach:
+1. Start from the current Expo + Firebase architecture.
+2. Treat media SDK adoption as a gated native integration.
+3. Keep MVP scope small enough to avoid hidden iOS/Android build regressions.
 
 ---
 
-## 2. Scope
+## 2. Current Codebase Baseline
 
-### In Scope:
-1. One-to-one video calls between matched users only
-2. Call initiation, acceptance, rejection, and termination
-3. Audio/video toggle during call
-4. Switch camera (front/back)
-5. Picture-in-picture view
-6. Call duration tracking
-7. Call quality indicators
-8. Poor connection handling
-9. Firebase-based signaling (call requests, ICE candidates)
-10. End-to-end encrypted media (WebRTC DTLS-SRTP)
+### 2.1 App Stack
 
-### Out of Scope:
-1. Group video calls (3+ participants)
-2. Recording or cloud storage of calls
-3. Screen recording by the app
-4. Virtual backgrounds/blur effects
-5. AI noise cancellation (native device noise cancellation only)
-6. File sharing during calls
-7. Text chat during calls
+- Expo SDK `54.0.32`
+- React Native `0.81.5`
+- React `19.1.0`
+- Expo Router `6.0.22`
+- React Native Firebase (`app`, `auth`, `firestore`, `functions`, `storage`)
+- Redux Toolkit for app state
+- Native iOS and Android directories are already committed
 
----
+### 2.2 Existing Chat and Backend Architecture
 
-## 3. Product Goals and Success Criteria
+- Matches are stored in `matches/{matchId}` and define who is allowed to chat.
+- Messages are stored in `matches/{matchId}/messages/{messageId}`.
+- Push and in-app notifications already use Expo Notifications plus Firebase Cloud Functions.
+- User presence is currently lightweight and based on fields in `users/{uid}`.
+- Cloud Functions already run in `asia-south1`.
 
-### Goals:
-1. Sub-second call connection time for 95% of calls
-2. Stable video quality at 360p minimum for mobile networks
-3. Automatic fallback to audio-only on poor connections
-4. Battery efficient - less than 15% drain for 10-minute call
-5. Never miss a call notification (100% delivery rate)
+### 2.3 Important Baseline Risks
 
-### KPIs:
-1. P95 call setup time < 2 seconds on stable network
-2. P95 call drop rate < 1% on 4G/5G
-3. Audio-only fallback rate < 5% of calls
-4. Average call duration > 5 minutes
-5. Call crash-free sessions > 99.5%
+The repository is not currently in a fully clean build state:
+- `npx expo-doctor` reports dependency drift and a New Architecture warning for `react-native-razorpay`.
+- `npx tsc --noEmit` currently fails in existing chat and matches code unrelated to video calling.
+- `app.json` says `newArchEnabled: false`, but the checked-in native projects currently have New Architecture enabled.
+
+Because of this, video calling must not be treated as a pure feature add. It must begin with a compatibility gate.
 
 ---
 
-## 4. Technical Architecture
+## 3. Compatibility Assessment
 
-### 4.1 Provider Selection: Daily.co (Recommended)
+### 3.1 Compatible With Current Architecture
 
-**Why Daily.co over raw WebRTC/Agora:**
-- Managed WebRTC infrastructure (no STUN/TURN server management)
-- React Native SDK with optimized performance
-- Automatic network adaptation
-- Built-in bandwidth management
-- HIPAA/GDPR compliant by default
-- Prebuilt UI components customizable to SkillSwap design
+These requirements fit the current app with low architectural risk:
 
-### 4.2 Alternative: Raw WebRTC
-If cost optimization needed later:
-- Use Firebase Realtime Database for signaling
-- Deploy custom Coturn server for STUN/TURN
-- Higher dev cost, lower per-minute cost
+1. One-to-one calls between matched users only
+2. Firestore-backed signaling and call state
+3. Expo Router navigation from chat into an active call screen
+4. Call invitation and missed-call notifications using the existing notification pipeline
+5. Cloud Functions for provider token generation and authorization checks
+6. Chat-level call history events such as "missed call" or "call ended"
 
-### 4.3 Architecture Components
+### 3.2 Not Compatible As Previously Written
+
+The previous SRS assumed features or versions that do not match the current app:
+
+1. `@daily-co/react-native-daily-js@^0.25.0` is not an acceptable target for this codebase.
+2. Screen sharing was listed as in-scope, but it requires extra native configuration and should not be part of MVP.
+3. Background audio continuity was listed as a product requirement, but that is native-provider-dependent and not safe to promise before device testing.
+4. Call quality indicators, adaptive bitrate rules, and aggressive reconnect logic were specified before a media SDK is even selected and proven in this repo.
+5. Additional native packages such as `react-native-incall-manager` and `react-native-vibration` were assumed without a need to add them for MVP.
+
+### 3.3 Daily Compatibility Conclusion
+
+Daily is still a reasonable provider for this app, but only under a current version set that matches Expo 54 and only after a native compatibility spike passes.
+
+For Expo `54.x`, the implementation must use the official compatible Daily stack rather than the old version from the previous SRS:
+
+| Package | Required Direction |
+|---------|--------------------|
+| `@daily-co/react-native-daily-js` | Use Expo-54-compatible release line |
+| `@daily-co/react-native-webrtc` | Use the matching Daily WebRTC version |
+| `@daily-co/config-plugin-rn-daily-js` | Required for Expo config integration |
+| `react-native-background-timer` | Add as Daily peer dependency |
+| `react-native-get-random-values` | Add as Daily peer dependency |
+
+Notes:
+- `@react-native-async-storage/async-storage` is already present in this repo.
+- MVP should keep `enableScreenShare` off.
+- If New Architecture remains enabled in native projects, Daily must be on a version line that supports it.
+
+### 3.4 MVP Dependency Policy
+
+For the first implementation pass:
+
+Safe to add:
+1. Daily packages and required peers
+2. Firestore rules and Cloud Functions for call lifecycle
+3. App config changes required by the Daily Expo plugin
+
+Do not add in MVP unless a specific need is proven:
+1. `react-native-incall-manager`
+2. `react-native-callkeep`
+3. Extra network libraries only for quality indicators
+4. Screen-share-only dependencies
+
+---
+
+## 4. Build-Safe Product Scope
+
+### 4.1 In Scope for MVP
+
+1. One-to-one calls between matched users
+2. Video call start from chat
+3. Audio-only fallback by starting or switching to audio-only inside the call
+4. Accept, decline, cancel, timeout, and end call flows
+5. Mute/unmute microphone
+6. Turn camera on/off
+7. Switch front/back camera
+8. Foreground-only active call experience
+9. Missed call event written back to chat/notifications
+10. Provider tokens created server-side
+
+### 4.2 Explicitly Out of Scope for MVP
+
+1. Screen sharing
+2. Group calls
+3. Recording
+4. Picture-in-picture
+5. System CallKit / Telecom UI
+6. Guaranteed background audio continuity
+7. Advanced call quality scores
+8. Dynamic network tier UI
+9. Post-call rating flow
+
+### 4.3 Product Success Criteria
+
+The first release should optimize for correctness and build stability, not feature breadth.
+
+MVP success criteria:
+1. No new TypeScript errors are introduced
+2. No new Expo Doctor failures are introduced
+3. iOS and Android development builds complete after dependency integration
+4. A matched user can complete a foreground call end-to-end
+5. Unauthorized users cannot read or join another user's call
+
+---
+
+## 5. User Experience Requirements
+
+### 5.1 Chat Entry Point
+
+- Add a video call action to the existing chat header
+- Keep the action visible only for matched-user chats
+- Disable the action when a call is already active for the current user
+- Do not rely on presence alone to decide if calling is allowed; presence is advisory only
+
+### 5.2 Incoming Call Experience
+
+- In-app incoming call modal when the app is foregrounded
+- Show caller name and avatar
+- `Accept` and `Decline` actions
+- Ring timeout at 30 seconds
+- If the app is backgrounded, rely on a push notification to bring the user back into the app
+
+### 5.3 Active Call Experience
+
+- Full-screen active call screen
+- Remote video as the primary surface when video is enabled
+- Local preview thumbnail
+- Controls:
+  - mute/unmute
+  - camera on/off
+  - switch camera
+  - end call
+- Show a simple call timer once connected
+
+### 5.4 Background Behavior
+
+For MVP, background behavior is best effort and not a release guarantee.
+
+Required behavior:
+1. If the app returns to foreground quickly, the client may attempt reconnect
+2. If the media session cannot be restored, the call ends cleanly
+
+Not required in MVP:
+1. Long-running background audio
+2. System-level incoming call UI
+3. Background screen share
+
+---
+
+## 6. Technical Architecture
+
+### 6.1 Recommended Provider
+
+Recommended provider for this codebase: Daily, integrated through the official Expo config plugin path.
+
+Reason:
+1. The repo already has native iOS and Android projects, so custom native code is possible.
+2. Firestore and Functions can handle signaling, authorization, and notifications.
+3. Daily reduces the need to own TURN/STUN infrastructure during MVP.
+
+### 6.2 High-Level Design
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Caller App    │────▶│   Daily.co API   │◀────│  Receiver App   │
-│  (React Native) │     │   (WebRTC mesh)  │     │ (React Native)  │
-└────────┬────────┘     └──────────────────┘     └────────┬────────┘
-         │                                                │
-         │ Signaling (call start, accept, reject)        │
-         ▼                                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Firebase Firestore                            │
-│  calls/{callId}: { status, callerUid, receiverUid, roomUrl }    │
-└─────────────────────────────────────────────────────────────────┘
+Chat Screen
+    |
+    v
+Callable Function: startCall(matchId, calleeUid, mode)
+    |
+    +--> Validate authenticated user is part of the match
+    +--> Create provider room metadata if needed
+    +--> Create calls/{callId}
+    +--> Create push/in-app notification for callee
+    |
+    v
+Firestore calls/{callId}
+    |
+    +--> Caller listener
+    +--> Callee listener
+    |
+    v
+Callable Function: getCallJoinCredentials(callId)
+    |
+    +--> Verify participant membership
+    +--> Verify call is still active
+    +--> Return provider token / room info
+    |
+    v
+Daily media session in active call screen
 ```
 
-### 4.4 Data Models
+### 6.3 Required Firestore Collection
 
-**Call Document (Firestore):**
-```typescript
+Add a top-level `calls` collection.
+
+```ts
+type CallStatus =
+  | 'ringing'
+  | 'accepted'
+  | 'connecting'
+  | 'connected'
+  | 'declined'
+  | 'missed'
+  | 'cancelled'
+  | 'ended'
+  | 'failed';
+
+type CallMode = 'video' | 'audio';
+
 interface CallDocument {
-  callId: string;              // UUID v4
-  callerUid: string;           // Initiator
-  receiverUid: string;         // Target user
-  matchId: string;           // Reference to match
-  status: 'ringing' | 'connecting' | 'connected' | 'ended' | 'declined' | 'missed';
-  roomUrl: string;            // Daily.co room URL
-  startedAt: Timestamp;
+  id: string;
+  matchId: string;
+  participantUids: [string, string];
+  callerUid: string;
+  calleeUid: string;
+  provider: 'daily';
+  mode: CallMode;
+  status: CallStatus;
+  roomName: string;
+  providerRoomUrl?: string;
+  initiatedFrom: 'chat';
+  createdAt: Timestamp;
+  acceptedAt?: Timestamp;
   connectedAt?: Timestamp;
   endedAt?: Timestamp;
-  endedBy?: string;          // UID of who ended
-  endReason?: 'user' | 'timeout' | 'error' | 'network';
-  callerPlatform: 'ios' | 'android';
-  receiverPlatform?: 'ios' | 'android';
-  callDuration?: number;      // Seconds
-  videoEnabled: boolean;      // Call started with video
-  audioEnabled: boolean;      // Call started with audio
+  updatedAt: Timestamp;
+  endedBy?: string;
+  endReason?: 'declined' | 'missed' | 'hangup' | 'error' | 'timeout' | 'network';
+  expiresAt: Timestamp;
 }
 ```
 
-**User Call Status (Firestore - real-time):**
-```typescript
-interface UserCallStatus {
-  uid: string;
-  inCall: boolean;
-  currentCallId?: string;
-  lastCallEndedAt?: Timestamp;
-  doNotDisturb: boolean;      // User preference
+### 6.4 Notification Types
+
+Extend the notification model to support:
+1. `incoming_call`
+2. `missed_call`
+3. `call_ended`
+
+These can continue using the existing top-level `notifications` collection.
+
+### 6.5 Cloud Functions
+
+Required callable functions:
+1. `startCall`
+2. `getCallJoinCredentials`
+3. `endCall`
+
+Optional trigger functions:
+1. `onCallCreated` for push notifications
+2. `onCallExpired` or scheduled cleanup for stale ringing calls
+
+### 6.6 Firestore Rules Direction
+
+`calls/{callId}` should be participant-only. Prefer server-created call documents.
+
+Recommended rule shape:
+
+```text
+match /calls/{callId} {
+  allow read: if request.auth != null
+    && request.auth.uid in resource.data.participantUids;
+
+  allow create: if false; // callable function only
+
+  allow update: if request.auth != null
+    && request.auth.uid in resource.data.participantUids
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      'status',
+      'acceptedAt',
+      'connectedAt',
+      'endedAt',
+      'updatedAt',
+      'endedBy',
+      'endReason'
+    ]);
 }
 ```
 
 ---
 
-## 5. Call Flow
+## 7. Native and Dependency Requirements
 
-### 5.1 Normal Call Flow
+### 7.1 Required App Config Changes
 
-```
-Caller                      Receiver                    Firestore
-  │                           │                            │
-  │──(1) Create call doc─────▶│                            │
-  │   status: 'ringing'       │                            │
-  │                           │                            │
-  │                           │◀──(2) Listen on user/{uid} │
-  │                           │   inCall: true               │
-  │                           │                            │
-  │                           │──(3) Show incoming call────▶
-  │                           │   UI with accept/decline   │
-  │                           │                            │
-  │◀────────(4) Receiver─────│                            │
-  │   accepts: update doc     │                            │
-  │   status: 'connecting'    │                            │
-  │                           │                            │
-  │──(5) Join Daily.co──────▶│                            │
-  │   room via roomUrl        │                            │
-  │                           │                            │
-  │                           │──(6) Join Daily.co room────▶
-  │                           │                            │
-  │◀────────(7) WebRTC───────▶│                            │
-  │   peer connection         │                            │
-  │   established             │                            │
-  │                           │                            │
-  │──(8) Update doc──────────▶│                            │
-  │   status: 'connected'     │                            │
-  │   connectedAt: now()      │                            │
-```
+If Daily is selected, update Expo config with:
+1. Daily Expo config plugin
+2. Camera permission
+3. Microphone permission
+4. Native rebuild after dependency install
 
-### 5.2 Call Timeout Handling
-- Ringing timeout: 30 seconds
-- If no response: status → 'missed'
-- Caller sees missed call notification
-- Receiver gets missed call badge in chat
+MVP plugin direction:
 
-### 5.3 Call Interruption Handling
-- App backgrounded: Audio continues, video pauses
-- Phone call incoming: Pause SkillSwap call, resume after
-- Network switch (WiFi ↔ 4G): Automatic reconnection with 5s timeout
-- App killed: Call ends with 'ended' status
-
----
-
-## 6. UI/UX Requirements
-
-### 6.1 Chat Integration
-
-**Call Buttons in ChatHeader:**
-- Video call icon (right side of header)
-- Audio call icon (next to video)
-- Disabled if other user offline
-- Disabled during active call
-
-**Incoming Call UI:**
-- Full-screen overlay (system alert style)
-- Caller avatar + name
-- Accept (green) / Decline (red) buttons
-- Slide-to-answer gesture (iOS style)
-- Ringtone + vibration
-
-**Active Call Screen:**
-- Main view: Remote video (fullscreen)
-- Pip view: Local video (corner, draggable)
-- Controls (bottom, fade after 3s tap):
-  - Mute/unmute audio
-  - Enable/disable video
-  - Switch camera
-  - Screen share (iOS 14.5+, Android 10+)
-  - End call (red, always visible)
-- Call duration timer (top)
-- Network quality indicator (top-right)
-
-### 6.2 States
-
-**Pre-call:**
-- Call button active only when matched and other user online
-- Tooltip: "Start video call" on long press
-
-**Ringing:**
-- Caller: "Calling..." with cancel button
-- Sound: Outgoing ring tone
-- Receiver: Incoming call UI
-
-**Connected:**
-- Both video streams visible
-- Connection quality indicator (excellent/good/poor)
-- Auto-hide controls after 3 seconds
-- Tap anywhere to show controls
-
-**Ended:**
-- Call summary: Duration, quality rating
-- "Call ended" message in chat
-- Option to call back
-
----
-
-## 7. Security & Privacy
-
-### 7.1 Requirements
-1. **E2E Encryption:** All media encrypted via WebRTC DTLS-SRTP
-2. **No Recording:** Call media never stored server-side
-3. **Match Validation:** Calls only between matched users (enforced by Firestore rules)
-4. **Room Security:** Daily.co rooms use random UUIDs, no guessable URLs
-5. **Token-based Auth:** Short-lived tokens for Daily.co room access
-
-### 7.2 Firestore Security Rules
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /calls/{callId} {
-      allow read: if request.auth != null && 
-        (resource.data.callerUid == request.auth.uid || 
-         resource.data.receiverUid == request.auth.uid);
-      allow create: if request.auth != null &&
-        request.auth.uid == request.resource.data.callerUid &&
-        exists(/databases/$(database)/documents/matches/$(request.resource.data.matchId)) &&
-        get(/databases/$(database)/documents/matches/$(request.resource.data.matchId)).data.users.hasAll([request.auth.uid, request.resource.data.receiverUid]);
-      allow update: if request.auth != null &&
-        (resource.data.callerUid == request.auth.uid || 
-         resource.data.receiverUid == request.auth.uid);
-    }
+```json
+[
+  "@daily-co/config-plugin-rn-daily-js",
+  {
+    "enableCamera": true,
+    "enableMicrophone": true,
+    "enableScreenShare": false
   }
-}
+]
 ```
 
+### 7.2 iOS Requirements
+
+Required:
+1. Camera permission string
+2. Microphone permission string
+3. Native rebuild after pods change
+
+Conditional:
+1. `UIBackgroundModes: ["voip"]` only when the Daily integration requires it for the chosen behavior
+2. Screen share extension only in a future phase
+
+### 7.3 Android Requirements
+
+Required:
+1. Camera permission
+2. Record audio permission
+3. Native rebuild after dependency install
+
+Conditional:
+1. Foreground service permissions only if the chosen provider flow actually needs them
+2. Extra telecom integrations only in a later phase
+
+### 7.4 Version Gate
+
+The implementation must not use the dependency block from the previous SRS.
+
+Instead, engineering must install a version set that matches Expo 54 and verify it on both platforms before any product code is merged.
+
 ---
 
-## 8. Performance Optimization
+## 8. Functional Requirements
 
-### 8.1 Video Quality Tiers
+### FR-001 to FR-006 Core Call Lifecycle
 
-| Network | Resolution | FPS | Bitrate |
-|---------|------------|-----|---------|
-| Excellent (5G/WiFi) | 720p | 30 | 2.5 Mbps |
-| Good (4G) | 480p | 24 | 1.0 Mbps |
-| Fair (3G/weak 4G) | 360p | 20 | 500 Kbps |
-| Poor | 240p | 15 | 250 Kbps |
-| Very Poor | Audio only | - | 64 Kbps |
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-001 | Only matched users can start a call | P0 |
+| FR-002 | Caller can start a video call from chat | P0 |
+| FR-003 | Callee can accept or decline | P0 |
+| FR-004 | Ringing call times out after 30 seconds | P0 |
+| FR-005 | Either participant can end the call | P0 |
+| FR-006 | Missed and ended calls create visible call events | P0 |
 
-### 8.2 Battery Optimization
-- Use VP8 codec (hardware accelerated on most devices)
-- Reduce FPS when app backgrounded
-- Pause video encoding when local video disabled
-- Aggressive garbage collection of ICE candidates after connection
+### FR-007 to FR-012 Active Call Controls
 
-### 8.3 Network Adaptation
-- Monitor packet loss every 2 seconds
-- Adjust bitrate up/down by 20% based on RTT
-- Switch to audio-only if packet loss > 5% for 5 seconds
-- Auto-reconnect with exponential backoff (max 3 attempts)
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-007 | Mute/unmute microphone during call | P0 |
+| FR-008 | Turn camera on/off during call | P0 |
+| FR-009 | Switch front/back camera | P1 |
+| FR-010 | Start call in video mode | P0 |
+| FR-011 | Support audio-only mode | P1 |
+| FR-012 | Show call duration after connection | P1 |
+
+### FR-013 to FR-017 Safety and Reliability
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-013 | Server validates participant membership before issuing provider credentials | P0 |
+| FR-014 | Client cannot join ended or expired calls | P0 |
+| FR-015 | Stale ringing calls expire automatically | P1 |
+| FR-016 | App handles caller cancellation cleanly | P0 |
+| FR-017 | App handles reconnect as best effort in foreground | P1 |
 
 ---
 
-## 9. Error Handling
+## 9. Non-Functional Requirements
 
-### 9.1 Error Scenarios
+### 9.1 Build and Release Safety
 
-| Error | User Message | Action |
-|-------|--------------|--------|
-| Camera permission denied | "Camera access needed for video calls" | Open settings button |
-| Microphone permission denied | "Microphone access needed for calls" | Open settings button |
-| Network unavailable | "No internet connection" | Retry button after 5s |
-| Peer disconnected | "Other person disconnected" | Auto-end after 10s |
-| Signaling failed | "Unable to start call" | Retry once, then error |
-| Daily.co room full | "Call is no longer available" | Close call screen |
+| ID | Requirement |
+|----|-------------|
+| NFR-001 | No new TypeScript failures |
+| NFR-002 | No new Expo Doctor failures |
+| NFR-003 | iOS dev build succeeds after native dependency changes |
+| NFR-004 | Android dev build succeeds after native dependency changes |
+| NFR-005 | Secrets remain server-side |
 
-### 9.2 Retry Logic
-- Initial connection: 3 attempts with 2s, 4s, 8s backoff
-- ICE reconnection: 2 attempts with 3s, 6s backoff
-- After max retries: Show error, log to Crashlytics
+### 9.2 Performance
+
+Use realistic goals for the first release:
+
+| ID | Requirement | Target |
+|----|-------------|--------|
+| NFR-006 | Call setup on stable network | < 8 seconds |
+| NFR-007 | Crash-free call sessions | > 99% |
+| NFR-008 | Ring timeout | 30 seconds |
+| NFR-009 | Call teardown consistency | Call doc finalized within 5 seconds |
+
+### 9.3 Security
+
+| ID | Requirement |
+|----|-------------|
+| NFR-010 | Only participants can read call state |
+| NFR-011 | Provider tokens are never generated on device |
+| NFR-012 | Call media is never recorded by the app in MVP |
+| NFR-013 | Match membership is revalidated server-side before join |
 
 ---
 
 ## 10. Implementation Plan
 
-### Phase 1: Foundation (Week 1)
-1. Add Daily.co dependency (`@daily-co/react-native-daily-js`)
-2. Create Firestore `calls` collection and rules
-3. Implement call signaling service (start, accept, reject, end)
-4. Add call status listener to chat screen
+### Phase 0: Baseline Hardening
 
-### Phase 2: UI (Week 2)
-1. Build IncomingCall overlay component
-2. Build ActiveCall screen with Daily.co video views
-3. Add call controls (mute, video toggle, camera switch)
-4. Integrate call buttons into ChatHeader
+Must be complete before video work is merged:
+1. Document and resolve current TypeScript failures that affect the chat stack
+2. Decide whether the project is running with New Architecture on or off
+3. Sync `app.json` with checked-in native config, or regenerate native projects intentionally
 
-### Phase 3: Polish (Week 3)
-1. Add network quality indicators
-2. Implement audio-only fallback
-3. Add call duration tracking and summary
-4. Background/foreground call handling
-5. Push notifications for missed calls
+### Phase 1: Compatibility Spike
 
-### Phase 4: Testing (Week 4)
-1. Network condition testing (3G/4G/5G/WiFi switching)
-2. Battery consumption testing
-3. Interruption testing (phone calls, notifications)
-4. Security audit of Firestore rules
+Goal: prove the media SDK can exist in this repo without breaking the build.
 
----
+Tasks:
+1. Add the Expo-54-compatible Daily dependency set in an isolated branch
+2. Add the Daily Expo config plugin with screen sharing disabled
+3. Rebuild native projects
+4. Verify:
+   - dependency install succeeds
+   - `npx expo-doctor`
+   - `npx tsc --noEmit`
+   - iOS dev build
+   - Android dev build
 
-## 11. Dependencies
+Exit criteria:
+1. Both platforms compile
+2. No new baseline regressions are introduced
+3. Camera and mic permissions behave correctly
 
-```json
-{
-  "@daily-co/react-native-daily-js": "^0.25.0",
-  "@react-native-community/netinfo": "^11.0.0",
-  "react-native-incall-manager": "^4.0.0",
-  "react-native-vibration": "^1.0.0"
-}
-```
+### Phase 2: Backend Call Lifecycle
 
-### iOS Podfile additions:
-```ruby
-pod 'Daily', '~> 0.25'
-```
+1. Add `calls` collection rules
+2. Implement callable functions for start/join/end flows
+3. Add notification triggers for incoming and missed calls
+4. Add timeout cleanup logic
 
-### Android Permissions:
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.RECORD_AUDIO" />
-<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-```
+### Phase 3: App UI
 
----
+1. Add call button to chat header
+2. Add incoming call modal
+3. Add active call screen route
+4. Add call event messages to chat history
 
-## 12. Testing Checklist
+### Phase 4: QA and Rollout
 
-### Functional Tests
-- [ ] Start call to online user
-- [ ] Accept incoming call
-- [ ] Decline incoming call
-- [ ] Missed call notification
-- [ ] End call from either side
-- [ ] Mute/unmute audio during call
-- [ ] Enable/disable video during call
-- [ ] Switch front/back camera
-- [ ] Call on 3G network (audio-only fallback)
-- [ ] Background app during call (audio continues)
+1. Test on physical iOS and Android devices
+2. Validate call timeout and cleanup
+3. Validate permission-denied flows
+4. Validate foreground-only reconnect behavior
+5. Release behind a feature flag if needed
 
-### Security Tests
-- [ ] Cannot call unmatched user (Firestore rule blocks)
-- [ ] Cannot join expired/ended call room
-- [ ] Cannot intercept call media
-- [ ] Call data not visible to other users
+### Phase 5: Deferred Enhancements
 
-### Performance Tests
-- [ ] 10-minute call < 15% battery drain
-- [ ] Call connects in < 2 seconds (WiFi)
-- [ ] Graceful degradation on poor network
-- [ ] No memory leaks after 5 calls
+Only after MVP is stable:
+1. Screen sharing
+2. Background audio continuity
+3. Picture-in-picture
+4. System call UI
+5. Quality indicators and analytics
 
 ---
 
-## 13. Future Enhancements (Post-MVP)
+## 11. Testing Checklist
 
-1. **Group Calls:** Up to 4 participants (Daily.co supports this)
-2. **Call Recording:** Opt-in recording with cloud storage
-3. **Screen Sharing:** Share device screen during call
-4. **Virtual Backgrounds:** Blur or replace background
-5. **Call Effects:** Filters, stickers during call
-6. **Call Scheduling:** Schedule calls, calendar integration
+### Functional
 
----
+- [ ] Caller can start a call from chat
+- [ ] Callee sees incoming call UI in foreground
+- [ ] Callee can accept
+- [ ] Callee can decline
+- [ ] Caller can cancel before answer
+- [ ] Ringing call becomes missed after timeout
+- [ ] Either side can end the call
+- [ ] Mute/unmute works
+- [ ] Camera on/off works
+- [ ] Camera switch works
 
-## 14. Appendix: Daily.co Configuration
+### Security
 
-### Room Configuration
-```javascript
-const roomConfig = {
-  privacy: 'private',
-  enable_screenshare: true,
-  enable_chat: false,  // We use our own chat
-  max_participants: 2,
-  eject_at_room_exp: true,
-  exp: Math.round(Date.now() / 1000) + (60 * 60), // 1 hour expiry
-  enable_knocking: false,  // Auto-join for matched users
-};
-```
+- [ ] Unmatched users cannot start calls
+- [ ] Non-participants cannot read a call document
+- [ ] Non-participants cannot request join credentials
+- [ ] Expired calls cannot be joined
 
-### Token Generation (Firebase Function)
-```javascript
-// Cloud Function to generate meeting token
-const { Daily } = require('@daily-co/daily-js');
+### Build Safety
 
-exports.generateCallToken = functions.https.onCall(async (data, context) => {
-  const { roomUrl, callId } = data;
-  const uid = context.auth.uid;
-  
-  // Verify user is part of this call
-  const callDoc = await admin.firestore().doc(`calls/${callId}`).get();
-  if (!callDoc.exists) throw new functions.https.HttpsError('not-found');
-  
-  const callData = callDoc.data();
-  if (callData.callerUid !== uid && callData.receiverUid !== uid) {
-    throw new functions.https.HttpsError('permission-denied');
-  }
-  
-  // Generate token with 1 hour expiry
-  const token = await Daily.createMeetingToken({
-    room_name: extractRoomName(roomUrl),
-    exp: Math.round(Date.now() / 1000) + (60 * 60),
-    is_owner: callData.callerUid === uid,
-  });
-  
-  return { token };
-});
-```
+- [ ] `npx expo-doctor` passes without new failures
+- [ ] `npx tsc --noEmit` passes or has no added failures beyond agreed baseline
+- [ ] iOS dev build succeeds
+- [ ] Android dev build succeeds
 
 ---
 
-End of Document
+## 12. Final Recommendation
+
+Proceed with video calling only under this order of operations:
+
+1. Fix the current build baseline enough to establish trust in the repo state
+2. Run a provider compatibility spike using the official Expo 54 Daily version set
+3. Keep MVP to foreground one-to-one calls with minimal controls
+4. Defer screen sharing, background calling guarantees, and advanced native telephony features
+
+This approach fits the current SkillSwap architecture and minimizes the chance that video-call work breaks iOS or Android builds.

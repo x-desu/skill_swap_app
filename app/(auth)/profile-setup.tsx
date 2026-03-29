@@ -26,7 +26,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Camera, X, Plus, ChevronRight, MapPin } from 'lucide-react-native';
 import { useAuthDispatch } from '../../src/hooks/useAuth';
-import { setProfileComplete } from '../../src/store/authSlice';
+import { setProfileComplete, setUser } from '../../src/store/authSlice';
 import { uploadProfilePhoto } from '../../src/services/storageService';
 import { upsertUserProfile } from '../../src/services/firestoreService';
 
@@ -364,6 +364,15 @@ export default function ProfileSetup() {
         displayName: displayName.trim(),
         ...(finalPhotoURL ? { photoURL: finalPhotoURL } : {}),
       });
+
+      // onAuthStateChanged does NOT re-fire after updateProfile — sync Redux manually
+      dispatch(setUser({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        displayName: displayName.trim(),
+        photoURL: finalPhotoURL,
+        isAnonymous: firebaseUser.isAnonymous,
+      }));
 
       await upsertUserProfile(firebaseUser.uid, {
         displayName: displayName.trim(),

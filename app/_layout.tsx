@@ -9,6 +9,7 @@ import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider'
 import { ThemeProvider } from '../src/context/ThemeContext';
 import { listenToUserProfile, upsertUserProfile } from '../src/services/firestoreService';
 import { clearProfile, setProfile } from '../src/store/profileSlice';
+import { clearDiscovery } from '../src/store/discoverySlice';
 import {
   clearBadgeCount,
   requestNotificationPermissions,
@@ -50,6 +51,7 @@ function AppNavigator() {
 
       if (firebaseUser) {
         // Hold routing until Firestore is checked
+        dispatch(clearDiscovery()); // clear stale feed before fresh fetch
         dispatch(setAppLoading(true));
         
         // 1. Update Redux with Firebase Auth fields
@@ -66,33 +68,51 @@ function AppNavigator() {
         notificationUnsubscribe = setupNotificationListeners();
         void requestNotificationPermissions(firebaseUser.uid);
         // 2. Create/merge Firestore user document (idempotent)
-        // Wrapped in try/catch — silently skips if Firestore rules aren't published yet
         try {
+          // Only pass non-null fields to avoid overwriting existing data
+          const bootstrapData: any = { email: firebaseUser.email };
+          if (firebaseUser.displayName) bootstrapData.displayName = firebaseUser.displayName;
+          if (firebaseUser.photoURL) {
+            bootstrapData.photoURL = firebaseUser.photoURL;
+            bootstrapData.hasPhoto = true;
+          }
+
           console.log('[SkillSwap Auth] Upserting user profile...');
-          await upsertUserProfile(firebaseUser.uid, {
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName ?? '',
-            photoURL: firebaseUser.photoURL,
-            hasPhoto: !!firebaseUser.photoURL,
-          });
+          await upsertUserProfile(firebaseUser.uid, bootstrapData);
           
           console.log('[SkillSwap Auth] Attaching real-time profile listener...');
           if (profileUnsubscribe) profileUnsubscribe();
           
+          let hasReleased = false;
+
           profileUnsubscribe = listenToUserProfile(firebaseUser.uid, (doc) => {
             if (doc) {
               dispatch(setProfile(doc));
               dispatch(setProfileComplete(doc.isProfileComplete ?? false));
             }
+            
+            // Release the loading gate exactly once on the first snapshot
+            if (!hasReleased) {
+               hasReleased = true;
+               dispatch(setAppLoading(false));
+            }
           });
+
+          // Safeguard: Release the loading lock after 3s if Firestore listener is taking too long
+          setTimeout(() => {
+            if (!hasReleased) {
+              console.warn('[SkillSwap Auth] Release timeout triggered — proceeding with possibly stale state');
+              hasReleased = true;
+              dispatch(setAppLoading(false));
+            }
+          }, 3000);
+
         } catch (e: any) {
           if (e?.code === 'firestore/permission-denied') {
             console.warn('[SkillSwap] Firestore rules not published yet — user doc not synced');
           } else {
             console.error('[SkillSwap] upsertUserProfile error:', e);
           }
-        } finally {
-          console.log('[SkillSwap Auth] Releasing loading lock');
           dispatch(setAppLoading(false));
         }
       } else {

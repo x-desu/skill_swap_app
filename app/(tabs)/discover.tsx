@@ -13,11 +13,9 @@ import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
 import { useDiscoverFilters } from '../../src/hooks/useDiscoverFilters';
 import { useSubscriptionStatus } from '../../src/hooks/useSubscriptionStatus';
 
-import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
 import { CardStack } from '../../src/components/Discover/CardStack';
 import { SearchHeader } from '../../src/components/Discover/SearchHeader';
 import { FilterBottomSheet } from '../../src/components/Discover/FilterBottomSheet';
-import { getProfileBaseColor } from '../../src/utils/colorUtils';
 
 import { likeUser, passUser } from '../../src/services/matchingService';
 import { removeFeedItem, recordSwipeData } from '../../src/store/discoverySlice';
@@ -26,9 +24,12 @@ const DAILY_SWIPE_LIMIT_FREE = 5;
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
+  bgBase: '#0d0202',
+  bgDark: '#1a0505',
   textPrimary: '#ffffff',
   textSecondary: 'rgba(255, 255, 255, 0.72)',
   textMuted: 'rgba(255, 255, 255, 0.45)',
+  borderLight: 'rgba(255, 255, 255, 0.12)',
 };
 
 export default function DiscoverScreen() {
@@ -131,22 +132,10 @@ export default function DiscoverScreen() {
     return count;
   }, [filters]);
 
-  // Background only changes when the TOP card changes uid — not on every re-render
-  const baseColor = useMemo(
-    () =>
-      currentProfile
-        ? getProfileBaseColor({ id: currentProfile.uid, avatar: currentProfile.photoURL ?? undefined })
-        : '#0a0a0a',
-    [currentProfile?.uid, currentProfile?.photoURL]
-  );
-  const seedKey = useMemo(
-    () => `tab:discover:${currentProfile?.uid || 'empty'}`,
-    [currentProfile?.uid]
-  );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ProfileGlowBackground baseColor={baseColor} seedKey={seedKey}>
+      <View style={[styles.mainContainer, { backgroundColor: COLORS.bgBase }]}>
         <View style={[styles.content, { paddingTop: insets.top, paddingBottom: 90 }]}>
 
           <SearchHeader
@@ -161,9 +150,9 @@ export default function DiscoverScreen() {
           {!isPro && (
             <View style={styles.swipeCounterContainer}>
               <View style={styles.swipeCounter}>
-                <Zap size={14} color="#ff1a5c" fill="#ff1a5c" />
+                <Zap size={12} color="#fff" fill="#fff" />
                 <Text style={styles.swipeCounterText}>
-                  {remainingSwipes}/{DAILY_SWIPE_LIMIT_FREE} Swipes Left
+                  {remainingSwipes} Swipes Left
                 </Text>
               </View>
             </View>
@@ -202,16 +191,18 @@ export default function DiscoverScreen() {
                 style={[styles.button, styles.passButton, { opacity: canSwipe ? 1 : 0.5 }]}
                 onPress={handleSwipeLeft}
                 disabled={!canSwipe}
+                activeOpacity={0.8}
               >
-                <X color="#fff" size={30} />
+                <X color="#fff" size={28} />
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.button, styles.likeButton, { opacity: canSwipe ? 1 : 0.5 }]}
                 onPress={handleSwipeRight}
                 disabled={!canSwipe}
+                activeOpacity={0.8}
               >
-                <Heart color="#fff" size={30} fill="#fff" />
+                <Heart color="#fff" size={28} fill="#fff" />
               </TouchableOpacity>
             </View>
           )}
@@ -226,12 +217,13 @@ export default function DiscoverScreen() {
             />
           )}
         </View>
-      </ProfileGlowBackground>
+      </View>
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  mainContainer: { flex: 1 },
   content: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
   swipeCounterContainer: {
@@ -242,50 +234,54 @@ const styles = StyleSheet.create({
   swipeCounter: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,26,92,0.15)',
-    paddingHorizontal: 12,
+    backgroundColor: '#ff1a5c',
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 20,
     gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,26,92,0.3)',
+    shadowColor: '#ff1a5c',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
   },
   swipeCounterText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ff1a5c',
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#fff',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   footer: {
-    height: 100,
+    height: 120,
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    gap: 40,
     position: 'absolute',
     bottom: 80,
     width: '100%',
   },
   button: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
   },
   passButton: {
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1.5,
+    borderColor: COLORS.borderLight,
   },
   likeButton: {
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: '#ff1a5c',
+    shadowColor: '#ff1a5c',
   },
   noMoreText: {
     fontSize: 22,
