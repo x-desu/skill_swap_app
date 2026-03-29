@@ -1,0 +1,23 @@
+{
+  "title": "SkillSwap에서 더 많은 혜택을 누리세요",
+  "subtitle": "프리미엄 도달, 추가 크레딧, 우선 발견 — 언제든지 취소 가능.",
+  "chip1": "추가 크레딧",
+  "chip2": "프리미엄 발견",
+  "chip3": "우선 스왑",
+  "restore": "복원",
+  "trust": "App Store 또는 Google Play로 안전합니다. 언제든지 취소 가능.",
+  "continue": "계속",
+  "privacy": "개인정보처리방침",
+  "terms": "이용약관",
+  "otherPlans": "다른 플랜",
+  "loading": "플랜 로드 중…",
+  "error": "구독을 로드할 수 없습니다. 다시 시도하세요.",
+  "purchaseError": "구매가 완료되지 않았습니다.",
+  "restoreDone": "구매가 복원되었습니다.",
+  "restoreError": "구매를 복원할 수 없습니다.",
+  "markerTitle": "당신",
+  "popular": "인기",
+  "optimal": "최적",
+  "bestValue": "최고 가치",
+  "purchaseThanks": "감사합니다! 구매가 동기화되면 잔액이 업데이트됩니다."
+}

@@ -8,13 +8,13 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bell, Grid3X3, Search as SearchIcon, MapPin, Check,
-  Gift, ArrowLeftRight, Star,
+  Gift, ArrowLeftRight, Star, Users,
 } from 'lucide-react-native';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { useRouter } from 'expo-router';
 import type { RootState } from '../../src/store';
 import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
-import { removeFeedItem, recordSwipeData } from '../../src/store/discoverySlice';
+import { useNotifications } from '../../src/hooks/useNotifications';
 import { likeUser } from '../../src/services/matchingService';
 import UserAvatar from '../../src/components/UserAvatar';
 import type { UserDocument } from '../../src/types/user';
@@ -155,11 +155,13 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const scrollX = useRef(new Animated.Value(0)).current;
 
-  const dispatch = useDispatch();
-
   // Real data from Redux/Firestore
   const authUser = useSelector((s: RootState) => s.auth.user);
-  const { users: fetchedUsers, loading } = useDiscoveryFeed(authUser?.uid || null);
+  const { users: fetchedUsers, loading, removeUserFromFeed, recordSwipe } = useDiscoveryFeed(authUser?.uid || null);
+  const { unreadCount, notifications } = useNotifications();
+  
+  // Debug logging
+  console.log('[Home] unreadCount:', unreadCount, 'notifications:', notifications.length);
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -181,9 +183,9 @@ export default function HomeScreen() {
     if (!authUser) return;
     try {
       // Create a "like" in the backend. If mutual, returns a MatchDocument.
-      // Optimistic UI: Remove them from the local Redux feed instantly.
-      dispatch(removeFeedItem(toUser.uid));
-      dispatch(recordSwipeData({ targetUid: toUser.uid, type: 'like' }));
+      // Optimistic UI: Remove them from the local feed instantly.
+      removeUserFromFeed(toUser.uid);
+      recordSwipe(toUser.uid);
 
       const match = await likeUser(authUser.uid, toUser.uid);
 
@@ -220,7 +222,17 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconBtn}><Bell color={COLORS.textSecondary} size={20} /></TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.iconBtn} 
+              onPress={() => router.push('/notifications')}
+            >
+              <Bell color={COLORS.textSecondary} size={20} />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn}><Grid3X3 color={COLORS.textSecondary} size={20} /></TouchableOpacity>
           </View>
         </View>
@@ -291,8 +303,10 @@ export default function HomeScreen() {
             ))}
           </Animated.ScrollView>
         ) : filteredUsers.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>🌐</Text>
+          <View style={[styles.emptyState, { width: width - 40, height: CARD_HEIGHT * 0.8 }]}>
+            <View style={styles.emptyIconContainer}>
+              <Users color={COLORS.rosePrimary} size={32} />
+            </View>
             <Text style={styles.emptyText}>No people here yet</Text>
             <Text style={styles.emptySubtext}>
               {selectedCategory === 'All'
@@ -355,6 +369,26 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: 'rgba(255,255,255,0.07)',
     justifyContent: 'center', alignItems: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: COLORS.rosePrimary,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: COLORS.bgBase,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 
   // Search
@@ -439,10 +473,29 @@ const styles = StyleSheet.create({
   proposeBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // Empty state
-  emptyState: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
-  emptyEmoji: { fontSize: 48, marginBottom: 12 },
-  emptyText: { color: 'rgba(255,255,255,0.6)', fontSize: 17, fontWeight: '700', marginBottom: 6 },
-  emptySubtext: { color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  emptyState: { 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    alignSelf: 'center', // center in ScrollView
+    marginVertical: 20,
+    paddingHorizontal: 30,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 26, 92, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 26, 92, 0.3)',
+    borderStyle: 'dashed',
+  },
+  emptyIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(255, 26, 92, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyText: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  emptySubtext: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
 
   // Featured Skills
   featuredRow: { paddingHorizontal: 20, gap: 10 },

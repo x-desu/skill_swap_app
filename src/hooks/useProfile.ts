@@ -1,29 +1,30 @@
+import { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
+import type { RootState } from '../store';
+import { UserDocument } from '../types/user';
+import { listenToUserProfile, upsertUserProfile } from '../services/firestoreService';
+
 /**
  * useProfile.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Subscribes to the current user's Firestore document in real-time.
- * - Creates a base doc automatically if this is the user's first login
- * - Dispatches to profileSlice
- * - Returns { profile, isLoading } from Redux
+ * - Creates a base doc automatically if this is the user's first login.
+ * - Localized state replacement for the deleted profileSlice.
  */
-import { useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import type { AppDispatch, RootState } from '../store';
-import { setProfile, setProfileLoading } from '../store/profileSlice';
-import { listenToUserProfile, upsertUserProfile } from '../services/firestoreService';
-
 export function useProfile() {
-  const dispatch = useDispatch<AppDispatch>();
-  const authUser = useSelector((s: RootState) => s.auth.user);
-  const { profile, isLoading } = useSelector((s: RootState) => s.profile);
+  const authUser = useSelector((state: RootState) => state.auth.user);
+  
+  const [profile, setProfile] = useState<UserDocument | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!authUser?.uid) {
-      dispatch(setProfileLoading(false));
+      setProfile(null);
+      setIsLoading(false);
       return;
     }
 
-    dispatch(setProfileLoading(true));
+    setIsLoading(true);
 
     // Real-time listener — automatically triggers profile creation on first listen
     const unsubscribe = listenToUserProfile(authUser.uid, async (doc) => {
@@ -37,7 +38,8 @@ export function useProfile() {
         });
         // The listener will fire again once the write completes
       } else {
-        dispatch(setProfile(doc));
+        setProfile(doc);
+        setIsLoading(false);
       }
     });
 

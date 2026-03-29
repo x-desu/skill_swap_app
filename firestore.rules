@@ -2,7 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
     function isSignedIn() {
       return request.auth != null;
     }
@@ -18,66 +17,79 @@ service cloud.firestore {
       );
     }
 
-    // ─── users/{uid} ─────────────────────────────────────────────────────────
-    // Any signed-in user can READ (needed for discovery feed).
-    // Only the owner can WRITE their own document (create or update).
+    function userServerOnlyKeys() {
+      return [
+        'credits',
+        'subscriptionTier',
+        'subscriptionStatus',
+        'subscriptionProductId',
+        'subscriptionExpiresAt',
+        'hasPremiumAccess',
+        'revenueCatAppUserId'
+      ];
+    }
+
+    function userTouchedServerOnlyOnCreate(data) {
+      return data.keys().hasAny(userServerOnlyKeys());
+    }
+
+    function userTouchedServerOnlyOnUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(userServerOnlyKeys());
+    }
+
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow write: if isOwner(uid);
+      allow create: if isOwner(uid) && !userTouchedServerOnlyOnCreate(request.resource.data);
+      allow update: if isOwner(uid) && !userTouchedServerOnlyOnUpdate();
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if isOwner(uid);
+        allow create: if isSignedIn();
+      }
     }
 
-    // ─── swapRequests/{id} ───────────────────────────────────────────────────
-    match /swapRequests/{id} {
-      allow read: if isSwapParticipant(resource.data);
-
-      allow create: if isSignedIn()
-        && request.auth.uid == request.resource.data.fromUid
-        && request.resource.data.status == 'pending';
-
-      allow update: if isSwapParticipant(resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'updatedAt']);
-
-      allow delete: if isSignedIn()
-        && request.auth.uid == resource.data.fromUid
-        && resource.data.status == 'pending';
-    }
-
-    // ─── skills/{id} ─────────────────────────────────────────────────────────
     match /skills/{id} {
       allow read: if isSignedIn();
       allow write: if isSignedIn();
     }
 
-    // ─── notifications/{uid}/items/{id} ──────────────────────────────────────
-    match /notifications/{uid}/items/{id} {
-      allow read, write: if isOwner(uid);
-    }
-
-    // ─── likes/{id} ──────────────────────────────────────────────────────────
     match /likes/{id} {
-      // User can read likes they sent or received
-      allow read: if isSignedIn() && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
-      // User can create a like if they are the sender
+      // Allow list queries where user queries their own likes
+      allow list: if isSignedIn() && request.query.limit <= 100;
+      // Allow read individual documents where user is participant
+      allow get: if isSignedIn() && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.fromUid;
     }
 
-    // ─── matches/{id} ────────────────────────────────────────────────────────
     match /matches/{id} {
-      // User can read matches they are a part of
       allow read: if isSignedIn() && request.auth.uid in resource.data.users;
-      // Anyone can create a match (Server/Client creation) as long as they are one of the users
-      allow create: if isSignedIn() && request.auth.uid in request.resource.data.users;
-      // Allow update for lastMessage
+      allow create: if false;
       allow update: if isSignedIn() && request.auth.uid in resource.data.users;
-      
-      // Messages subcollection
+
       match /messages/{messageId} {
         allow read, write: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/matches/$(id)).data.users;
       }
     }
 
-    // ─── Deny all other paths ─────────────────────────────────────────────────
+    match /notifications/{id} {
+      allow read, update, delete: if isSignedIn() && request.auth.uid == resource.data.userId;
+      allow create: if false;
+    }
+
+    match /creditLedger/{ledgerId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /subscriptions/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    match /purchaseEvents/{eventId} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

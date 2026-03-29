@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import firestore from '@react-native-firebase/firestore';
+import { subscribeToMatches } from '../services/matchingService';
 import { MatchDocument } from '../types/user';
 
 /**
+ * useMatches.ts
+ * ─────────────────────────────────────────────────────────────────────────────
  * Real-time hook to listen to all matches for the current user.
- * Mounts in the Chat List (`messages.tsx`) to show active conversations.
+ * Connects directly to Firestore, entirely independent of Redux.
  */
 export const useMatches = (currentUid: string | null) => {
   const [matches, setMatches] = useState<MatchDocument[]>([]);
@@ -20,16 +22,12 @@ export const useMatches = (currentUid: string | null) => {
 
     setLoading(true);
 
-    const matchRef = firestore()
-      .collection('matches')
-      .where('users', 'array-contains', currentUid)
-      .orderBy('lastMessageTime', 'desc');
-
-    const unsubscribe = matchRef.onSnapshot(
-      (snapshot) => {
-        const fetchedMatches = snapshot.docs.map((doc) => doc.data() as MatchDocument);
+    const unsubscribe = subscribeToMatches(
+      currentUid,
+      (fetchedMatches) => {
         setMatches(fetchedMatches);
         setLoading(false);
+        setError(null);
       },
       (err) => {
         console.error('Error fetching matches:', err);

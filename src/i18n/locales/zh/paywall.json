@@ -1,0 +1,23 @@
+{
+  "title": "从 SkillSwap 获取更多",
+  "subtitle": "高级覆盖范围、额外积分和优先发现 — 随时取消。",
+  "chip1": "额外积分",
+  "chip2": "高级发现",
+  "chip3": "优先交换",
+  "restore": "恢复",
+  "trust": "通过 App Store 或 Google Play 确保安全。随时取消。",
+  "continue": "继续",
+  "privacy": "隐私政策",
+  "terms": "使用条款",
+  "otherPlans": "其他方案",
+  "loading": "正在加载方案…",
+  "error": "无法加载订阅。请重试。",
+  "purchaseError": "购买未完成。",
+  "restoreDone": "购买已恢复。",
+  "restoreError": "无法恢复购买。",
+  "markerTitle": "您",
+  "popular": "热门",
+  "optimal": "最佳",
+  "bestValue": "最划算",
+  "purchaseThanks": "谢谢！购买同步后您的余额将会更新。"
+}

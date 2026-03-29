@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import auth from '@react-native-firebase/auth';
+import { getAuth, signInWithCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut as firebaseSignOut, GoogleAuthProvider, AppleAuthProvider } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { appleAuth } from '@invertase/react-native-apple-authentication';
 
@@ -12,6 +12,7 @@ export interface AuthUser {
   photoURL: string | null;
   isAnonymous: boolean;
 }
+
 
 interface AuthState {
   user: AuthUser | null;
@@ -39,8 +40,8 @@ export const signInWithGoogle = createAsyncThunk(
     try {
       await GoogleSignin.hasPlayServices();
       const { data } = await GoogleSignin.signIn();
-      const credential = auth.GoogleAuthProvider.credential(data!.idToken);
-      await auth().signInWithCredential(credential);
+      const credential = GoogleAuthProvider.credential(data!.idToken);
+      await signInWithCredential(getAuth(), credential);
       return 'google' as const;
     } catch (e: any) {
       return rejectWithValue(e.message ?? 'Google sign-in failed');
@@ -56,11 +57,11 @@ export const signInWithApple = createAsyncThunk(
         requestedOperation: appleAuth.Operation.LOGIN,
         requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
       });
-      const credential = auth.AppleAuthProvider.credential(
+      const credential = AppleAuthProvider.credential(
         res.identityToken,
         res.nonce,
       );
-      await auth().signInWithCredential(credential);
+      await signInWithCredential(getAuth(), credential);
       return 'apple' as const;
     } catch (e: any) {
       return rejectWithValue(e.message ?? 'Apple sign-in failed');
@@ -75,7 +76,7 @@ export const signUpWithEmail = createAsyncThunk(
     { rejectWithValue },
   ) => {
     try {
-      await auth().createUserWithEmailAndPassword(email, password);
+      await createUserWithEmailAndPassword(getAuth(), email, password);
       return 'email' as const;
     } catch (e: any) {
       return rejectWithValue(e.message ?? 'Sign up failed');
@@ -90,7 +91,7 @@ export const signInWithEmail = createAsyncThunk(
     { rejectWithValue },
   ) => {
     try {
-      await auth().signInWithEmailAndPassword(email, password);
+      await signInWithEmailAndPassword(getAuth(), email, password);
       return 'email' as const;
     } catch (e: any) {
       return rejectWithValue(e.message ?? 'Sign in failed');
@@ -102,7 +103,7 @@ export const sendPasswordReset = createAsyncThunk(
   'auth/sendPasswordReset',
   async (email: string, { rejectWithValue }) => {
     try {
-      await auth().sendPasswordResetEmail(email);
+      await sendPasswordResetEmail(getAuth(), email);
     } catch (e: any) {
       return rejectWithValue(e.message ?? 'Password reset failed');
     }
@@ -113,7 +114,7 @@ export const signOut = createAsyncThunk(
   'auth/signOut',
   async (_, { rejectWithValue }) => {
     try {
-      await auth().signOut();
+      await firebaseSignOut(getAuth());
       try {
         await GoogleSignin.signOut();
       } catch (_) {

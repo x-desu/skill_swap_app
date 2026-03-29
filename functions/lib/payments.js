@@ -1,0 +1,228 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.razorpayWebhook = exports.verifyRazorpayPayment = exports.createRazorpayOrder = void 0;
+const https_1 = require("firebase-functions/v2/https");
+const params_1 = require("firebase-functions/params");
+const admin = __importStar(require("firebase-admin"));
+const crypto = __importStar(require("crypto"));
+const Razorpay = require('razorpay');
+const razorpayKeyId = (0, params_1.defineSecret)('RAZORPAY_KEY_ID');
+const razorpayKeySecret = (0, params_1.defineSecret)('RAZORPAY_KEY_SECRET');
+/**
+ * Create a Razorpay Order
+ * Callable from Expo app
+ */
+exports.createRazorpayOrder = (0, https_1.onCall)({ region: 'asia-south1', secrets: [razorpayKeyId, razorpayKeySecret] }, async (request) => {
+    // Check if user is authenticated
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'User must be logged in to create an order');
+    }
+    const { amount, credits } = request.data;
+    const amountNumber = typeof amount === 'number' ? amount : Number(amount);
+    const creditsNumber = typeof credits === 'number' ? credits : Number(credits);
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0 || !Number.isFinite(creditsNumber) || creditsNumber <= 0) {
+        throw new https_1.HttpsError('invalid-argument', 'Amount and credits are required');
+    }
+    try {
+        const razorpay = new Razorpay({
+            key_id: razorpayKeyId.value(),
+            key_secret: razorpayKeySecret.value(),
+        });
+        const order = await razorpay.orders.create({
+            amount: Math.round(amountNumber * 100),
+            currency: 'INR',
+            receipt: `receipt_${Date.now()}`,
+            notes: {
+                userId: request.auth.uid,
+                credits: String(creditsNumber),
+            },
+        });
+        return {
+            id: order.id,
+            amount: order.amount,
+            currency: order.currency,
+        };
+    }
+    catch (error) {
+        console.error('[Razorpay] Create Order Error:', error);
+        throw new https_1.HttpsError('internal', 'Failed to create Razorpay order');
+    }
+});
+/**
+ * Verify Razorpay Payment Signature
+ * Callable from Expo app
+ */
+exports.verifyRazorpayPayment = (0, https_1.onCall)({ region: 'asia-south1', secrets: [razorpayKeySecret] }, async (request) => {
+    // Check if user is authenticated
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'User must be logged in to verify payment');
+    }
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, credits, amount } = request.data;
+    if (typeof razorpay_order_id !== 'string' ||
+        typeof razorpay_payment_id !== 'string' ||
+        typeof razorpay_signature !== 'string') {
+        throw new https_1.HttpsError('invalid-argument', 'Payment details are missing');
+    }
+    const creditsNumber = typeof credits === 'number' ? credits : Number(credits);
+    const amountNumber = typeof amount === 'number' ? amount : Number(amount);
+    if (!Number.isFinite(creditsNumber) || creditsNumber <= 0) {
+        throw new https_1.HttpsError('invalid-argument', 'Credits are missing');
+    }
+    // Verify signature
+    const body = razorpay_order_id + '|' + razorpay_payment_id;
+    const expectedSignature = crypto
+        .createHmac('sha256', razorpayKeySecret.value())
+        .update(body.toString())
+        .digest('hex');
+    if (expectedSignature !== razorpay_signature) {
+        console.error('[Razorpay] Signature Verification Failed');
+        throw new https_1.HttpsError('invalid-argument', 'Invalid payment signature');
+    }
+    const userId = request.auth.uid;
+    const db = admin.firestore();
+    try {
+        // Update User Profile (Credits + Premium status)
+        const userRef = db.collection('users').doc(userId);
+        await db.runTransaction(async (transaction) => {
+            var _a;
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists) {
+                throw new Error('User document not found');
+            }
+            const currentCredits = ((_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.credits) || 0;
+            const nextCredits = currentCredits + creditsNumber;
+            transaction.update(userRef, {
+                credits: nextCredits,
+                isPremium: true,
+                premiumExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                lastPaymentId: razorpay_payment_id,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            // Log Payment in 'payments' collection
+            const paymentRef = db.collection('payments').doc(razorpay_payment_id);
+            transaction.set(paymentRef, {
+                userId,
+                orderId: razorpay_order_id,
+                paymentId: razorpay_payment_id,
+                amount: Number.isFinite(amountNumber) ? amountNumber : 0,
+                credits: creditsNumber,
+                status: 'success',
+                verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            // Add to creditLedger for tracking
+            const ledgerRef = db.collection('creditLedger').doc();
+            transaction.set(ledgerRef, {
+                userId,
+                delta: creditsNumber,
+                balanceAfter: nextCredits,
+                reason: 'credit_pack_purchase',
+                referenceType: 'razorpay_payment',
+                referenceId: razorpay_payment_id,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                createdBy: 'backend',
+            });
+        });
+        console.log(`[Razorpay] Payment ${razorpay_payment_id} verified for user ${userId}`);
+        return { success: true };
+    }
+    catch (error) {
+        console.error('[Razorpay] Verification/Firestore Error:', error);
+        throw new https_1.HttpsError('internal', 'Payment verified but failed to update profile');
+    }
+});
+/**
+ * Razorpay Webhook
+ * HTTPS Request from Razorpay
+ */
+exports.razorpayWebhook = (0, https_1.onRequest)({ region: 'asia-south1', secrets: [razorpayKeySecret] }, async (req, res) => {
+    // In production, you MUST verify the webhook signature
+    // const secret = 'YOUR_WEBHOOK_SECRET';
+    // const signature = req.headers['x-razorpay-signature'];
+    var _a, _b, _c;
+    const event = req.body;
+    const db = admin.firestore();
+    if (event.event === 'payment.captured') {
+        const payment = event.payload.payment.entity;
+        const userId = (_a = payment.notes) === null || _a === void 0 ? void 0 : _a.userId;
+        const credits = parseInt(((_b = payment.notes) === null || _b === void 0 ? void 0 : _b.credits) || '0');
+        if (userId && credits > 0) {
+            console.log(`[Razorpay Webhook] Processing captured payment for user ${userId}`);
+            const userRef = db.collection('users').doc(userId);
+            const userDoc = await userRef.get();
+            if (userDoc.exists) {
+                const currentCredits = ((_c = userDoc.data()) === null || _c === void 0 ? void 0 : _c.credits) || 0;
+                // Ensure idempotency by checking if payment was already processed
+                const paymentRef = db.collection('payments').doc(payment.id);
+                const paymentDoc = await paymentRef.get();
+                if (!paymentDoc.exists) {
+                    const nextCredits = currentCredits + credits;
+                    await db.runTransaction(async (transaction) => {
+                        transaction.update(userRef, {
+                            credits: nextCredits,
+                            isPremium: true,
+                            premiumExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                            lastPaymentId: payment.id,
+                        });
+                        transaction.set(paymentRef, {
+                            userId,
+                            orderId: payment.order_id,
+                            paymentId: payment.id,
+                            amount: payment.amount / 100,
+                            credits,
+                            status: 'success',
+                            source: 'webhook',
+                            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        });
+                        const ledgerRef = db.collection('creditLedger').doc();
+                        transaction.set(ledgerRef, {
+                            userId,
+                            delta: credits,
+                            balanceAfter: nextCredits,
+                            reason: 'credit_pack_purchase',
+                            referenceType: 'razorpay_webhook',
+                            referenceId: payment.id,
+                            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                            createdBy: 'webhook',
+                        });
+                    });
+                    console.log(`[Razorpay Webhook] Successfully updated credits via webhook for user ${userId}`);
+                }
+            }
+        }
+    }
+    res.status(200).send('OK');
+});
+//# sourceMappingURL=payments.js.map

@@ -1,0 +1,23 @@
+{
+  "title": "Obtenha mais do SkillSwap",
+  "subtitle": "Alcance premium, créditos extras e descoberta prioritária — cancele a qualquer momento.",
+  "chip1": "Créditos extras",
+  "chip2": "Descoberta premium",
+  "chip3": "Trocas prioritárias",
+  "restore": "Restaurar",
+  "trust": "Seguro com a App Store ou Google Play. Cancele a qualquer momento.",
+  "continue": "Continuar",
+  "privacy": "Política de privacidade",
+  "terms": "Termos de uso",
+  "otherPlans": "Outros planos",
+  "loading": "Carregando planos…",
+  "error": "Não foi possível carregar as assinaturas. Tente novamente.",
+  "purchaseError": "A compra não foi concluída.",
+  "restoreDone": "Compras restauradas.",
+  "restoreError": "Não foi possível restaurar as compras.",
+  "markerTitle": "Você",
+  "popular": "POPULAR",
+  "optimal": "ÓTIMO",
+  "bestValue": "MELHOR VALOR",
+  "purchaseThanks": "Obrigado! Seu saldo será atualizado quando a compra for sincronizada."
+}

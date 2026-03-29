@@ -2,10 +2,11 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, Settings, Edit2, Plus } from 'lucide-react-native';
+import { MapPin, Settings, Edit2, Plus, Crown, Zap } from 'lucide-react-native';
 import { router } from 'expo-router';
-import type { RootState } from '../../src/store';
 import UserAvatar from '../../src/components/UserAvatar';
+import { useProfile } from '../../src/hooks/useProfile';
+import { useSubscriptionStatus } from '../../src/hooks/useSubscriptionStatus';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -20,9 +21,10 @@ const COLORS = {
 
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
-    const currentUser = useSelector((state: RootState) => state.profile.profile);
+    const { profile: currentUser, isLoading } = useProfile();
+    const { isPro } = useSubscriptionStatus();
 
-    if (!currentUser) {
+    if (isLoading || !currentUser) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
                 <ActivityIndicator size="large" color={COLORS.rosePrimary} />
@@ -54,6 +56,19 @@ export default function ProfileScreen() {
                         size={120}
                     />
                     <Text style={styles.name}>{currentUser.displayName}</Text>
+
+                    {/* Pro Badge or Upgrade Banner */}
+                    {isPro ? (
+                        <View style={styles.proBadge}>
+                            <Crown color="#fff" size={14} />
+                            <Text style={styles.proBadgeText}>PRO MEMBER</Text>
+                        </View>
+                    ) : (
+                        <TouchableOpacity style={styles.upgradeBanner} onPress={() => router.push('/paywall')}>
+                            <Zap color="#ff1a5c" size={16} />
+                            <Text style={styles.upgradeBannerText}>Upgrade to Pro</Text>
+                        </TouchableOpacity>
+                    )}
 
                     <View style={styles.locationContainer}>
                         <MapPin color={COLORS.rosePrimary} size={14} />
@@ -178,6 +193,38 @@ const styles = StyleSheet.create({
         color: COLORS.textPrimary,
         marginTop: 15,
         marginBottom: 4,
+    },
+    proBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#00C2A0',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        gap: 6,
+        marginBottom: 15,
+    },
+    proBadgeText: {
+        color: '#fff',
+        fontWeight: '800',
+        fontSize: 12,
+    },
+    upgradeBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 26, 92, 0.15)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        gap: 8,
+        marginBottom: 15,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 26, 92, 0.4)',
+    },
+    upgradeBannerText: {
+        color: '#ff1a5c',
+        fontWeight: '700',
+        fontSize: 14,
     },
     locationContainer: {
         flexDirection: 'row',

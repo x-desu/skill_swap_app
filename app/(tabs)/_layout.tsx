@@ -1,9 +1,10 @@
 import React, { useRef, useEffect } from 'react';
-import { View, TouchableOpacity, StyleSheet, Dimensions, Animated } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Dimensions, Animated, Text } from 'react-native';
 import { Tabs, router } from 'expo-router';
-import { Home, Search, Heart, User } from 'lucide-react-native';
+import { Home, Search, Heart, User, Bell } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '../../src/hooks/useAuth';
+import { useNotifications } from '../../src/hooks/useNotifications';
 
 const { width } = Dimensions.get('window');
 
@@ -14,17 +15,20 @@ const COLORS = {
     bgNav: 'rgba(26, 5, 5, 0.85)',
     borderSubtle: 'rgba(255, 255, 255, 0.08)',
     textMuted: 'rgba(255, 255, 255, 0.4)',
+    badgeRed: '#ff3b30',
 };
 
-// Animated Tab Icon Component
+// Animated Tab Icon Component with Badge Support
 function AnimatedTabIcon({
     IconComponent,
     isFocused,
-    onPress
+    onPress,
+    badgeCount,
 }: {
     IconComponent: any;
     isFocused: boolean;
     onPress: () => void;
+    badgeCount?: number;
 }) {
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -51,12 +55,21 @@ function AnimatedTabIcon({
                     color={isFocused ? COLORS.rosePrimary : COLORS.textMuted}
                     fill={isFocused ? COLORS.rose20 : 'transparent'}
                 />
+                {badgeCount && badgeCount > 0 ? (
+                    <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                            {badgeCount > 99 ? '99+' : badgeCount}
+                        </Text>
+                    </View>
+                ) : null}
             </Animated.View>
         </TouchableOpacity>
     );
 }
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
+    const { unreadCount } = useNotifications();
+
     const tabs = [
         { name: 'index', label: 'Home', icon: Home },
         { name: 'discover', label: 'Search', icon: Search },
@@ -115,6 +128,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                                     IconComponent={IconComponent}
                                     isFocused={isFocused}
                                     onPress={onPress}
+                                    badgeCount={tab.name === 'matches' ? unreadCount : undefined}
                                 />
                             );
                         })}
@@ -181,8 +195,28 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: 'transparent',
+        position: 'relative',
     },
     iconContainerActive: {
         backgroundColor: COLORS.rose20,
+    },
+    badge: {
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        backgroundColor: COLORS.badgeRed,
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+        borderWidth: 2,
+        borderColor: COLORS.bgNav,
+    },
+    badgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '700',
     },
 });
