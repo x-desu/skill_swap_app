@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import firestore, { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  onSnapshot,
   orderBy,
   limit,
-  getDocs,
 } from '@react-native-firebase/firestore';
 import { LikeDocument } from '../types/user';
 
-const db = firestore();
+const db = getFirestore();
 
 /**
  * useLikes.ts

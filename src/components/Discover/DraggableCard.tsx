@@ -1,12 +1,14 @@
 import React, { useRef } from 'react';
 import { Animated, PanResponder, Dimensions, StyleSheet, Text } from 'react-native';
-import SwipeCard from '../SwipeCard'; // Adjusted path (since this goes in Discover folder)
+import SwipeCard from '../SwipeCard';
+import { UserDocument } from '../../types/user';
 
 const { width } = Dimensions.get('window');
 const SWIPE_THRESHOLD = width * 0.3;
+const CARD_HEIGHT = Math.min(540, width * 1.38);
 
 interface DraggableCardProps {
-    user: any;
+    user: UserDocument;
     onSwipeRight: () => void;
     onSwipeLeft: () => void;
 }
@@ -91,7 +93,7 @@ const styles = StyleSheet.create({
     cardWrapper: {
         position: 'absolute',
         width: width * 0.9,
-        height: 500, // Matches SwipeCard's constant height
+        height: CARD_HEIGHT,
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#000',

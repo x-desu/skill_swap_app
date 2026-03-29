@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import firestore from '@react-native-firebase/firestore';
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+} from '@react-native-firebase/firestore';
 import { MatchDocument } from '../types/user';
 
 /**
@@ -20,14 +27,16 @@ export const useMatches = (currentUid: string | null) => {
 
     setLoading(true);
 
-    const matchRef = firestore()
-      .collection('matches')
-      .where('users', 'array-contains', currentUid)
-      .orderBy('lastMessageTime', 'desc');
+    const matchRef = query(
+      collection(getFirestore(), 'matches'),
+      where('users', 'array-contains', currentUid),
+      orderBy('lastMessageTime', 'desc'),
+    );
 
-    const unsubscribe = matchRef.onSnapshot(
+    const unsubscribe = onSnapshot(
+      matchRef,
       (snapshot) => {
-        const fetchedMatches = snapshot.docs.map((doc) => doc.data() as MatchDocument);
+        const fetchedMatches = snapshot.docs.map((matchDoc: any) => matchDoc.data() as MatchDocument);
         setMatches(fetchedMatches);
         setLoading(false);
       },

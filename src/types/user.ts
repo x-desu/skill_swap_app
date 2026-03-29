@@ -44,7 +44,10 @@ export interface UserDocument {
   // Flags
   isProfileComplete: boolean;
   hasPhoto: boolean;
-  fcmToken?: string; // for push notifications (future)
+  fcmToken?: string; // legacy push token field
+  pushToken?: string; // current Expo push token field
+  hasSeenPaywall?: boolean;
+  revenueCatAppUserId?: string;
 
   // Engagement Metrics (Phase 1)
   isOnline?: boolean;
@@ -121,18 +124,37 @@ export interface MessageDocument {
   pending?: boolean;
 }
 
-// ─── Notification (future subcollection: notifications/{uid}/items/{id}) ─────
+// ─── In-App Notifications ─────────────────────────────────────────────────────
 
-export type NotificationType = 'swap_request' | 'swap_accepted' | 'swap_completed' | 'review' | 'new_match' | 'new_message';
+export type NotificationType =
+  | 'swap_request'
+  | 'swap_accepted'
+  | 'swap_completed'
+  | 'review'
+  | 'new_match'
+  | 'new_message'
+  | 'system';
 
-export interface Notification {
-  id?: string;
+export interface AppNotificationData {
+  matchId?: string;
+  targetUid?: string;
+  targetName?: string;
+  targetPhotoURL?: string;
+  senderId?: string;
+  senderName?: string;
+  senderPhotoURL?: string;
+  type?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  userId: string;
   type: NotificationType;
   title: string;
   body: string;
-  data?: Record<string, string>;
+  data?: AppNotificationData;
   read: boolean;
-  createdAt: Timestamp;
+  createdAt: Timestamp | number | Date | null;
 }
 
 // ── Convenience type for creating/updating user profiles ─────────────────────

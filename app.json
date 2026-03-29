@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/skillswap-icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/skillswap-icon.png",
       "resizeMode": "contain",
@@ -48,7 +48,13 @@
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "static"
+            "useFrameworks": "static",
+            "forceStaticLinking": [
+              "RNFBApp",
+              "RNFBAuth",
+              "RNFBFirestore",
+              "RNFBStorage"
+            ]
           }
         }
       ],
@@ -65,7 +71,11 @@
         {
           "locationAlwaysAndWhenInUsePermission": "SkillSwap needs access to your location to automatically determine your city and country."
         }
-      ]
-    ]
+      ],
+      "expo-localization"
+    ],
+    "extra": {
+      "razorpayKeyId": "rzp_live_SX039qZ9OOIngV"
+    }
   }
 }

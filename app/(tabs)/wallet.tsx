@@ -1,126 +1,211 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { useStore } from '../../src/store/useStore';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useSelector } from 'react-redux';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Clock, TrendingUp, TrendingDown, Plus } from 'lucide-react-native';
-import { useTheme } from '../../src/context/ThemeContext';
-import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
-import { getProfileBaseColor } from '../../src/utils/colorUtils';
+import { Wallet, Crown, Bell, MessageSquare, ChevronRight, Plus } from 'lucide-react-native';
+import type { RootState } from '../../src/store';
+import { useSubscriptionStatus } from '../../src/hooks/useSubscriptionStatus';
+import UserAvatar from '../../src/components/UserAvatar';
 
 export default function WalletScreen() {
-    const { currentUser, transactions, addCredits } = useStore();
+    const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { colors, isDark } = useTheme();
+    const authUser = useSelector((state: RootState) => state.auth.user);
+    const profile = useSelector((state: RootState) => state.profile.profile);
+    const { isPro, isLoading } = useSubscriptionStatus();
 
-    const baseColor = getProfileBaseColor(currentUser);
-    const seedKey = `tab:wallet:${currentUser.id}`;
+    if (!authUser || !profile) {
+        return (
+            <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
+                <ActivityIndicator size="large" color={COLORS.rosePrimary} />
+            </View>
+        );
+    }
+
+    const membershipLabel = isLoading ? 'Checking membership...' : (isPro ? 'Pro Member' : 'Free Member');
 
     return (
-        <ProfileGlowBackground baseColor={baseColor} seedKey={seedKey}>
-            <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: 'transparent' }]}>
-                <Text style={[styles.title, { color: colors.text }]}>Wallet</Text>
-
-            <View style={[styles.card, { backgroundColor: isDark ? '#1E1E1E' : '#333' }]}>
-                <Text style={styles.cardLabel}>Available Balance</Text>
-                <View style={styles.balanceRow}>
-                    <Clock color="#fff" size={32} />
-                    <Text style={styles.balance}>{currentUser.credits.toFixed(1)}</Text>
-                    <Text style={styles.unit}>Credits</Text>
+        <ScrollView
+            style={[styles.container, { paddingTop: insets.top }]}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+        >
+            <View style={styles.headerRow}>
+                <View>
+                    <Text style={styles.title}>Wallet</Text>
+                    <Text style={styles.subtitle}>Credits, payments, and membership</Text>
                 </View>
-                <Text style={styles.subText}>1 Credit ≈ 1 Hour of Service</Text>
+                <UserAvatar
+                    uid={authUser.uid}
+                    displayName={authUser.displayName}
+                    photoURL={authUser.photoURL}
+                    size={44}
+                />
             </View>
 
-            <TouchableOpacity style={styles.addButton} onPress={() => addCredits(1, 'Purchased credits')}>
-                <Plus color="#fff" size={20} />
-                <Text style={styles.addButtonText}>Buy More Credits</Text>
+            <View style={styles.balanceCard}>
+                <View style={styles.balanceHeader}>
+                    <View style={styles.balanceIcon}>
+                        <Wallet color={COLORS.rosePrimary} size={24} />
+                    </View>
+                    <View>
+                        <Text style={styles.cardLabel}>Available Credits</Text>
+                        <Text style={styles.membershipPill}>{membershipLabel}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.balanceRow}>
+                    <Text style={styles.balance}>{profile.credits.toFixed(1)}</Text>
+                    <Text style={styles.unit}>credits</Text>
+                </View>
+
+                <Text style={styles.subText}>
+                    Buy more credits with Razorpay or manage premium access through RevenueCat.
+                </Text>
+            </View>
+
+            <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/paywall')}>
+                <Plus color="#fff" size={18} />
+                <Text style={styles.primaryButtonText}>Buy Credits</Text>
             </TouchableOpacity>
 
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>History</Text>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Manage</Text>
 
-            {transactions.length === 0 ? (
-                <Text style={[styles.emptyText, { color: colors.text }]}>No transactions yet</Text>
-            ) : (
-                transactions.map((tx) => {
-                    const isEarn = tx.type === 'earn';
-                    const amountText = `${isEarn ? '+' : '-'}${tx.amount.toFixed(1)}`;
-                    const dateLabel = new Date(tx.date).toLocaleDateString();
-                    const iconBg = isEarn
-                        ? (isDark ? '#1a3320' : '#E8F5E9')
-                        : (isDark ? '#332020' : '#FFEBEE');
+                <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/customer-center')}>
+                    <View style={[styles.actionIcon, { backgroundColor: 'rgba(255, 26, 92, 0.12)' }]}>
+                        <Crown color={COLORS.rosePrimary} size={20} />
+                    </View>
+                    <View style={styles.actionTextWrap}>
+                        <Text style={styles.actionTitle}>Customer Center</Text>
+                        <Text style={styles.actionSubtitle}>Manage subscription and restore purchases</Text>
+                    </View>
+                    <ChevronRight color={COLORS.textMuted} size={18} />
+                </TouchableOpacity>
 
-                    return (
-                        <View key={tx.id} style={styles.transaction}>
-                            <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
-                                {isEarn ? (
-                                    <TrendingUp color="#4CD964" size={24} />
-                                ) : (
-                                    <TrendingDown color="#FF5A5F" size={24} />
-                                )}
-                            </View>
-                            <View style={styles.transInfo}>
-                                <Text style={[styles.transTitle, { color: colors.text }]}>{tx.description}</Text>
-                                <Text style={styles.transDate}>{dateLabel}</Text>
-                            </View>
-                            <Text style={isEarn ? styles.transAmountPositive : [styles.transAmountNegative, { color: colors.text }]}>
-                                {amountText}
-                            </Text>
-                        </View>
-                    );
-                })
-            )}
+                <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/notifications')}>
+                    <View style={[styles.actionIcon, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+                        <Bell color="#60a5fa" size={20} />
+                    </View>
+                    <View style={styles.actionTextWrap}>
+                        <Text style={styles.actionTitle}>Notifications</Text>
+                        <Text style={styles.actionSubtitle}>Open your in-app alerts and match activity</Text>
+                    </View>
+                    <ChevronRight color={COLORS.textMuted} size={18} />
+                </TouchableOpacity>
 
-            </ScrollView>
-        </ProfileGlowBackground>
+                <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/(tabs)/matches')}>
+                    <View style={[styles.actionIcon, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <MessageSquare color="#34d399" size={20} />
+                    </View>
+                    <View style={styles.actionTextWrap}>
+                        <Text style={styles.actionTitle}>Chats & Matches</Text>
+                        <Text style={styles.actionSubtitle}>Jump back into your active conversations</Text>
+                    </View>
+                    <ChevronRight color={COLORS.textMuted} size={18} />
+                </TouchableOpacity>
+            </View>
+        </ScrollView>
     );
 }
 
+const COLORS = {
+    rosePrimary: '#ff1a5c',
+    bgBase: '#0d0202',
+    cardBg: 'rgba(255, 255, 255, 0.04)',
+    borderLight: 'rgba(255, 255, 255, 0.08)',
+    textPrimary: '#ffffff',
+    textSecondary: 'rgba(255, 255, 255, 0.72)',
+    textMuted: 'rgba(255, 255, 255, 0.45)',
+};
+
 const styles = StyleSheet.create({
-    container: { flex: 1, paddingHorizontal: 20 }, // Dynamic bg
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.bgBase,
+        paddingHorizontal: 20,
+    },
+    content: {
+        paddingBottom: 120,
+    },
+    center: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 24,
+    },
     title: {
         fontSize: 28,
-        fontWeight: 'bold',
-        marginBottom: 20,
-        // color handled inline
+        fontWeight: '800',
+        color: COLORS.textPrimary,
     },
-    card: {
-        // bg handled inline
+    subtitle: {
+        marginTop: 6,
+        color: COLORS.textSecondary,
+        fontSize: 14,
+    },
+    balanceCard: {
+        backgroundColor: COLORS.cardBg,
         borderRadius: 20,
         padding: 25,
         marginBottom: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 8,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+    },
+    balanceHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 18,
+    },
+    balanceIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 26, 92, 0.12)',
+        marginRight: 14,
     },
     cardLabel: {
-        color: '#aaa',
+        color: COLORS.textSecondary,
         fontSize: 14,
-        fontWeight: '600',
+        fontWeight: '700',
         textTransform: 'uppercase',
-        marginBottom: 10,
+        letterSpacing: 0.4,
+    },
+    membershipPill: {
+        marginTop: 6,
+        color: COLORS.rosePrimary,
+        fontSize: 13,
+        fontWeight: '700',
     },
     balanceRow: {
         flexDirection: 'row',
         alignItems: 'baseline',
-        marginBottom: 5,
+        marginBottom: 8,
     },
     balance: {
-        color: '#fff',
+        color: COLORS.textPrimary,
         fontSize: 48,
-        fontWeight: 'bold',
-        marginHorizontal: 10,
+        fontWeight: '800',
     },
     unit: {
-        color: '#aaa',
+        color: COLORS.textSecondary,
         fontSize: 18,
+        marginLeft: 8,
     },
     subText: {
-        color: '#666',
-        fontSize: 12,
+        color: COLORS.textSecondary,
+        fontSize: 14,
+        lineHeight: 20,
     },
-    addButton: {
-        backgroundColor: '#FF5A5F',
+    primaryButton: {
+        backgroundColor: COLORS.rosePrimary,
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
@@ -128,59 +213,51 @@ const styles = StyleSheet.create({
         borderRadius: 15,
         marginBottom: 30,
     },
-    addButtonText: {
+    primaryButtonText: {
         color: '#fff',
-        fontWeight: 'bold',
+        fontWeight: '800',
         fontSize: 16,
         marginLeft: 8,
     },
     sectionTitle: {
         fontSize: 20,
-        fontWeight: 'bold',
-        // color handled inline
+        fontWeight: '800',
+        color: COLORS.textPrimary,
         marginBottom: 15,
     },
-    emptyText: {
-        fontSize: 14,
-        color: '#888',
-        marginTop: 8,
+    section: {
+        marginBottom: 24,
     },
-    transaction: {
+    actionRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 20,
-        paddingVertical: 5,
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        marginBottom: 12,
     },
-    iconBox: {
-        width: 50,
-        height: 50,
-        borderRadius: 12,
+    actionIcon: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 15,
-        // bg handled inline
+        marginRight: 14,
     },
-    transInfo: {
+    actionTextWrap: {
         flex: 1,
     },
-    transTitle: {
+    actionTitle: {
         fontSize: 16,
-        fontWeight: '600',
-        // color handled inline
+        fontWeight: '700',
+        color: COLORS.textPrimary,
     },
-    transDate: {
-        fontSize: 12,
-        color: '#999',
-        marginTop: 2,
-    },
-    transAmountPositive: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#4CD964',
-    },
-    transAmountNegative: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        // color handled inline
+    actionSubtitle: {
+        marginTop: 4,
+        fontSize: 13,
+        color: COLORS.textSecondary,
     },
 });

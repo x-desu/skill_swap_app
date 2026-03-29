@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -21,7 +22,7 @@ import {
   ExternalLink,
 } from 'lucide-react-native';
 import Purchases, { CustomerInfo, PurchasesEntitlementInfo } from 'react-native-purchases';
-import { initRevenueCat, revenueCatLogIn, revenueCatLogOut } from '../services/revenueCatService';
+import { initRevenueCat, revenueCatLogIn } from '../services/revenueCatService';
 import { useAuth } from '../hooks/useAuth';
 
 const ENTITLEMENT_ID = 'skillswap_pro';
@@ -279,8 +280,6 @@ export function CustomerCenter() {
 export default function CustomerCenterScreen() {
   return <CustomerCenter />;
 }
-
-import { Platform } from 'react-native';
 
 const styles = StyleSheet.create({
   container: {

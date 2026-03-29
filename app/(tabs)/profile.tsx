@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, Settings, Edit2, Plus } from 'lucide-react-native';
+import { MapPin, Settings, Edit2, Plus, Crown, CreditCard, ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import type { RootState } from '../../src/store';
 import UserAvatar from '../../src/components/UserAvatar';
@@ -13,10 +13,12 @@ const COLORS = {
   bgBase: '#0d0202',
   textPrimary: '#ffffff',
   textSecondary: 'rgba(255, 255, 255, 0.7)',
+  textMuted: 'rgba(255, 255, 255, 0.4)',
   borderLight: 'rgba(255, 255, 255, 0.1)',
   cardBg: 'rgba(255, 255, 255, 0.03)',
   statBg: 'rgba(255, 26, 92, 0.05)',
 };
+
 
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
@@ -62,7 +64,7 @@ export default function ProfileScreen() {
                         </Text>
                     </View>
 
-                    <TouchableOpacity style={styles.editButton}>
+                    <TouchableOpacity style={styles.editButton} onPress={() => router.push('/(auth)/profile-setup')}>
                         <Edit2 color={COLORS.textPrimary} size={14} />
                         <Text style={styles.editButtonText}>Edit Profile</Text>
                     </TouchableOpacity>
@@ -94,6 +96,35 @@ export default function ProfileScreen() {
                             <Text style={styles.statSecondaryValue}>{creditsSpent.toFixed(1)}</Text>
                         </View>
                     </View>
+                </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Subscription</Text>
+                    <TouchableOpacity style={styles.subscriptionCard} onPress={() => router.push('/paywall')}>
+                        <View style={styles.subscriptionIcon}>
+                            <Crown color={COLORS.rosePrimary} size={22} />
+                        </View>
+                        <View style={styles.subscriptionCopy}>
+                            <Text style={styles.subscriptionTitle}>Upgrade Subscription</Text>
+                            <Text style={styles.subscriptionSubtitle}>
+                                Unlock premium benefits, manage Pro, and buy more credits.
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.subscriptionActionCard} onPress={() => router.push('/customer-center')}>
+                        <View style={styles.subscriptionActionLeft}>
+                            <View style={styles.subscriptionActionIcon}>
+                                <CreditCard color={COLORS.textPrimary} size={18} />
+                            </View>
+                            <View style={styles.subscriptionActionCopy}>
+                                <Text style={styles.subscriptionActionTitle}>Open Customer Center</Text>
+                                <Text style={styles.subscriptionActionSubtitle}>
+                                    Manage subscription status, restores, and billing help.
+                                </Text>
+                            </View>
+                        </View>
+                        <ChevronRight color={COLORS.textMuted} size={18} />
+                    </TouchableOpacity>
                 </View>
 
                 <View style={styles.section}>
@@ -290,6 +321,78 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         borderWidth: 1,
         borderColor: COLORS.borderLight,
+    },
+    subscriptionCard: {
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    subscriptionActionCard: {
+        marginTop: 12,
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    subscriptionIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255, 26, 92, 0.14)',
+        marginRight: 14,
+    },
+    subscriptionCopy: {
+        flex: 1,
+    },
+    subscriptionActionLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 12,
+    },
+    subscriptionActionIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        marginRight: 12,
+    },
+    subscriptionActionCopy: {
+        flex: 1,
+    },
+    subscriptionTitle: {
+        color: COLORS.textPrimary,
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    subscriptionSubtitle: {
+        color: COLORS.textSecondary,
+        fontSize: 13,
+        marginTop: 6,
+    },
+    subscriptionActionTitle: {
+        color: COLORS.textPrimary,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    subscriptionActionSubtitle: {
+        color: COLORS.textSecondary,
+        fontSize: 13,
+        marginTop: 4,
+        lineHeight: 18,
     },
     bio: {
         fontSize: 15,

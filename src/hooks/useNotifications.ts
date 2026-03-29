@@ -19,6 +19,7 @@ export const useNotifications = () => {
     if (!user?.uid) {
       setNotifications([]);
       setIsLoading(false);
+      void setBadgeCount(0);
       return;
     }
 
@@ -29,7 +30,7 @@ export const useNotifications = () => {
 
       // Automatically update the OS badge count
       const unread = fetchedNotifications.filter(n => !n.read).length;
-      setBadgeCount(unread);
+      void setBadgeCount(unread);
     });
 
     return () => unsubscribe();

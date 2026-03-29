@@ -6,7 +6,25 @@
  * - All listeners return their unsubscribe function
  * - No direct Firestore calls should exist outside this file
  */
-import firestore from '@react-native-firebase/firestore';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  arrayUnion,
+  arrayRemove,
+  deleteDoc,
+} from '@react-native-firebase/firestore';
 import {
   UserDocument,
   UserProfileInput,
@@ -16,8 +34,9 @@ import {
 
 // ─── Collection references ────────────────────────────────────────────────────
 
-const usersCol = () => firestore().collection('users');
-const swapsCol = () => firestore().collection('swapRequests');
+const db = () => getFirestore();
+const usersCol = () => collection(db(), 'users');
+const swapsCol = () => collection(db(), 'swapRequests');
 
 // ─── User Profile ─────────────────────────────────────────────────────────────
 
@@ -31,18 +50,18 @@ export const upsertUserProfile = async (
   uid: string,
   data: Partial<UserProfileInput>,
 ): Promise<void> => {
-  const ref = usersCol().doc(uid);
-  const snap = await ref.get();
+  const ref = doc(usersCol(), uid);
+  const snap = await getDoc(ref);
 
   if (snap.data() !== undefined) {
     // Document exists — only update the specific fields provided
-    await ref.update({
+    await updateDoc(ref, {
       ...data,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   } else {
     // New document — inject all required default values
-    await ref.set({
+    await setDoc(ref, {
       displayName: '',
       photoURL: null,
       email: null,
@@ -58,7 +77,7 @@ export const upsertUserProfile = async (
       hasPhoto: false,
       ...data, // Caller-supplied data wins
       uid,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   }
 };
@@ -67,7 +86,7 @@ export const upsertUserProfile = async (
  * One-shot read of a single user document.
  */
 export const getUserProfile = async (uid: string): Promise<UserDocument | null> => {
-  const snap = await usersCol().doc(uid).get();
+  const snap = await getDoc(doc(usersCol(), uid));
   if (!snap.exists) return null;
   return { ...(snap.data() as UserDocument), uid: snap.id };
 };
@@ -80,9 +99,7 @@ export const listenToUserProfile = (
   uid: string,
   callback: (user: UserDocument | null) => void,
 ): (() => void) =>
-  usersCol()
-    .doc(uid)
-    .onSnapshot((snap) => {
+  onSnapshot(doc(usersCol(), uid), (snap) => {
       if (!snap.exists) {
         callback(null);
         return;
@@ -99,24 +116,28 @@ export const listenToNearbyUsers = (
   callback: (users: UserDocument[]) => void,
   categoryKeywords?: string[],
 ): (() => void) => {
-  let query = usersCol()
-    .where('isProfileComplete', '==', true)
-    .orderBy('rating', 'desc')
-    .limit(30);
+  let usersQuery = query(
+    usersCol(),
+    where('isProfileComplete', '==', true),
+    orderBy('rating', 'desc'),
+    limit(30),
+  );
 
   // If category keywords provided, filter by teachSkills array-contains-any
   if (categoryKeywords && categoryKeywords.length > 0) {
-    query = usersCol()
-      .where('isProfileComplete', '==', true)
-      .where('teachSkills', 'array-contains-any', categoryKeywords.slice(0, 10))
-      .orderBy('rating', 'desc')
-      .limit(30);
+    usersQuery = query(
+      usersCol(),
+      where('isProfileComplete', '==', true),
+      where('teachSkills', 'array-contains-any', categoryKeywords.slice(0, 10)),
+      orderBy('rating', 'desc'),
+      limit(30),
+    );
   }
 
-  return query.onSnapshot((snap) => {
+  return onSnapshot(usersQuery, (snap) => {
     const users = snap.docs
-      .map((d) => ({ ...(d.data() as UserDocument), uid: d.id }))
-      .filter((u) => u.uid !== currentUid);
+      .map((userDoc: any) => ({ ...(userDoc.data() as UserDocument), uid: userDoc.id }))
+      .filter((user: UserDocument) => user.uid !== currentUid);
     callback(users);
   }, console.error);
 };
@@ -131,46 +152,46 @@ export const updateUserSkills = (
   teachSkills: string[],
   wantSkills: string[],
 ): Promise<void> =>
-  usersCol().doc(uid).update({
+  updateDoc(doc(usersCol(), uid), {
     teachSkills,
     wantSkills,
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 
 /**
  * Add a single skill to the user's teach list (no duplicates).
  */
 export const addTeachSkill = (uid: string, skill: string): Promise<void> =>
-  usersCol().doc(uid).update({
-    teachSkills: firestore.FieldValue.arrayUnion(skill),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+  updateDoc(doc(usersCol(), uid), {
+    teachSkills: arrayUnion(skill),
+    updatedAt: serverTimestamp(),
   });
 
 /**
  * Remove a single skill from the user's teach list.
  */
 export const removeTeachSkill = (uid: string, skill: string): Promise<void> =>
-  usersCol().doc(uid).update({
-    teachSkills: firestore.FieldValue.arrayRemove(skill),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+  updateDoc(doc(usersCol(), uid), {
+    teachSkills: arrayRemove(skill),
+    updatedAt: serverTimestamp(),
   });
 
 /**
  * Add a single skill to the user's want list (no duplicates).
  */
 export const addWantSkill = (uid: string, skill: string): Promise<void> =>
-  usersCol().doc(uid).update({
-    wantSkills: firestore.FieldValue.arrayUnion(skill),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+  updateDoc(doc(usersCol(), uid), {
+    wantSkills: arrayUnion(skill),
+    updatedAt: serverTimestamp(),
   });
 
 /**
  * Remove a single skill from the user's want list.
  */
 export const removeWantSkill = (uid: string, skill: string): Promise<void> =>
-  usersCol().doc(uid).update({
-    wantSkills: firestore.FieldValue.arrayRemove(skill),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+  updateDoc(doc(usersCol(), uid), {
+    wantSkills: arrayRemove(skill),
+    updatedAt: serverTimestamp(),
   });
 
 // ─── User Discovery ───────────────────────────────────────────────────────────
@@ -180,12 +201,14 @@ export const removeWantSkill = (uid: string, skill: string): Promise<void> =>
  * Returns up to 20 results.
  */
 export const searchUsersBySkill = async (skill: string): Promise<UserDocument[]> => {
-  const snap = await usersCol()
-    .where('isProfileComplete', '==', true)
-    .where('teachSkills', 'array-contains', skill)
-    .limit(20)
-    .get();
-  return snap.docs.map((d) => ({ ...(d.data() as UserDocument), uid: d.id }));
+  const usersQuery = query(
+    usersCol(),
+    where('isProfileComplete', '==', true),
+    where('teachSkills', 'array-contains', skill),
+    limit(20),
+  );
+  const snap = await getDocs(usersQuery);
+  return snap.docs.map((userDoc: any) => ({ ...(userDoc.data() as UserDocument), uid: userDoc.id }));
 };
 
 // ─── Swap Requests ────────────────────────────────────────────────────────────
@@ -197,11 +220,11 @@ export const searchUsersBySkill = async (skill: string): Promise<UserDocument[]>
 export const createSwapRequest = async (
   data: Omit<SwapRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>,
 ): Promise<void> => {
-  await swapsCol().add({
+  await addDoc(swapsCol(), {
     ...data,
     status: 'pending' as SwapStatus,
-    createdAt: firestore.FieldValue.serverTimestamp(),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 };
 
@@ -222,22 +245,32 @@ export const listenToMySwapRequests = (
     if (resolved[0] && resolved[1]) callback(incoming, outgoing);
   };
 
-  const unsubIncoming = swapsCol()
-    .where('toUid', '==', uid)
-    .orderBy('createdAt', 'desc')
-    .limit(50)
-    .onSnapshot((snap) => {
-      incoming = snap.docs.map((d) => ({ ...(d.data() as SwapRequest), id: d.id }));
+  const incomingQuery = query(
+    swapsCol(),
+    where('toUid', '==', uid),
+    orderBy('createdAt', 'desc'),
+    limit(50),
+  );
+  const unsubIncoming = onSnapshot(incomingQuery, (snap) => {
+      incoming = snap.docs.map((requestDoc: any) => ({
+        ...(requestDoc.data() as SwapRequest),
+        id: requestDoc.id,
+      }));
       resolved[0] = true;
       notify();
     }, console.error);
 
-  const unsubOutgoing = swapsCol()
-    .where('fromUid', '==', uid)
-    .orderBy('createdAt', 'desc')
-    .limit(50)
-    .onSnapshot((snap) => {
-      outgoing = snap.docs.map((d) => ({ ...(d.data() as SwapRequest), id: d.id }));
+  const outgoingQuery = query(
+    swapsCol(),
+    where('fromUid', '==', uid),
+    orderBy('createdAt', 'desc'),
+    limit(50),
+  );
+  const unsubOutgoing = onSnapshot(outgoingQuery, (snap) => {
+      outgoing = snap.docs.map((requestDoc: any) => ({
+        ...(requestDoc.data() as SwapRequest),
+        id: requestDoc.id,
+      }));
       resolved[1] = true;
       notify();
     }, console.error);
@@ -252,13 +285,13 @@ export const listenToMySwapRequests = (
  * Update a swap request's status (accept, decline, complete).
  */
 export const updateSwapStatus = (id: string, status: SwapStatus): Promise<void> =>
-  swapsCol().doc(id).update({
+  updateDoc(doc(swapsCol(), id), {
     status,
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 
 /**
  * Delete a pending swap request (only the sender should be able to do this).
  */
 export const deleteSwapRequest = (id: string): Promise<void> =>
-  swapsCol().doc(id).delete();
+  deleteDoc(doc(swapsCol(), id));

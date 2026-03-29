@@ -28,8 +28,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import { getAuth, updateProfile } from '@react-native-firebase/auth';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Camera, X, Plus, ChevronRight, MapPin } from 'lucide-react-native';
@@ -161,7 +160,7 @@ function StyledInput({
 
 export default function ProfileSetup() {
   const dispatch = useAuthDispatch();
-  const firebaseUser = auth().currentUser;
+  const firebaseUser = getAuth().currentUser;
 
   const [displayName, setDisplayName] = useState(firebaseUser?.displayName ?? '');
   const [skillsOffered, setSkillsOffered] = useState<string[]>([]);
@@ -282,7 +281,7 @@ export default function ProfileSetup() {
         finalPhotoURL = await uploadProfilePhoto(firebaseUser.uid, photoUri);
       }
 
-      await firebaseUser.updateProfile({
+      await updateProfile(firebaseUser, {
         displayName: displayName.trim(),
         ...(finalPhotoURL ? { photoURL: finalPhotoURL } : {}),
       });

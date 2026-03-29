@@ -49,9 +49,15 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    // ─── notifications/{uid}/items/{id} ──────────────────────────────────────
+    // ─── notifications/{uid}/items/{id} (legacy nested shape) ───────────────
     match /notifications/{uid}/items/{id} {
       allow read, write: if isOwner(uid);
+    }
+
+    // ─── notifications/{id} (current top-level shape used by the app) ───────
+    match /notifications/{id} {
+      allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
     }
 
     // ─── likes/{id} ──────────────────────────────────────────────────────────

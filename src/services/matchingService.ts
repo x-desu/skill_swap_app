@@ -1,19 +1,20 @@
-import firestore, { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  addDoc, 
-  serverTimestamp, 
-  limit, 
-  doc, 
-  setDoc, 
-  writeBatch, 
-  increment 
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  limit,
+  doc,
+  setDoc,
+  writeBatch,
+  increment,
 } from '@react-native-firebase/firestore';
 import { LikeDocument, MatchDocument } from '../types/user';
 
-const db = firestore();
+const db = getFirestore();
 
 /**
  * Returns a list of UIDs that the current user has already liked or passed.

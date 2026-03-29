@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { Search as SearchIcon, SlidersHorizontal } from 'lucide-react-native';
 import { SkillCategory, CATEGORY_SKILLS_MAP } from '../../types/discover';
 
@@ -10,8 +9,10 @@ const COLORS = {
   borderLight: 'rgba(255, 255, 255, 0.1)',
   textMuted: 'rgba(255, 255, 255, 0.4)',
   borderSubtle: 'rgba(255, 255, 255, 0.08)',
+  inputBg: 'rgba(255,255,255,0.08)',
 };
 
+// Computed once at module level — categories never change
 const categories = Object.keys(CATEGORY_SKILLS_MAP) as SkillCategory[];
 
 interface SearchHeaderProps {
@@ -23,31 +24,31 @@ interface SearchHeaderProps {
   activeFilterCount: number;
 }
 
-export function SearchHeader({
+function SearchHeaderComponent({
   searchQuery,
   onSearchChange,
   selectedCategory,
   onSelectCategory,
   onOpenFilters,
-  activeFilterCount
+  activeFilterCount,
 }: SearchHeaderProps) {
-  
   return (
     <View style={styles.container}>
-      {/* Search & Filter Row */}
+      {/* Search & Filter Row — plain View instead of BlurView */}
       <View style={styles.searchRow}>
-        <BlurView intensity={20} tint="dark" style={styles.searchBar}>
+        <View style={styles.searchBar}>
           <SearchIcon color={COLORS.textMuted} size={16} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search skills, names, bios..."
+            placeholder="Search skills, names..."
             placeholderTextColor={COLORS.textMuted}
             value={searchQuery}
             onChangeText={onSearchChange}
+            returnKeyType="search"
           />
-        </BlurView>
-        
-        <TouchableOpacity style={styles.filterBtn} onPress={onOpenFilters}>
+        </View>
+
+        <TouchableOpacity style={styles.filterBtn} onPress={onOpenFilters} activeOpacity={0.75}>
           <SlidersHorizontal color="#fff" size={18} />
           {activeFilterCount > 0 && (
             <View style={styles.badge}>
@@ -62,12 +63,15 @@ export function SearchHeader({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoriesRow}
+        // Prevent category scroll from stealing swipe gestures on the card
+        keyboardShouldPersistTaps="handled"
       >
         {categories.map((cat) => (
           <TouchableOpacity
             key={cat}
             style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
             onPress={() => onSelectCategory(cat)}
+            activeOpacity={0.75}
           >
             <Text style={[styles.categoryText, selectedCategory === cat && styles.categoryTextActive]}>
               {cat}
@@ -78,6 +82,8 @@ export function SearchHeader({
     </View>
   );
 }
+
+export const SearchHeader = memo(SearchHeaderComponent);
 
 const styles = StyleSheet.create({
   container: {
@@ -101,6 +107,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: COLORS.borderLight,
+    backgroundColor: COLORS.inputBg,
     overflow: 'hidden',
   },
   searchInput: {
@@ -117,7 +124,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.borderLight,
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative'
+    position: 'relative',
   },
   badge: {
     position: 'absolute',
@@ -150,7 +157,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
-    justifyContent: 'center'
+    justifyContent: 'center',
   },
   categoryPillActive: {
     backgroundColor: COLORS.rosePrimary,

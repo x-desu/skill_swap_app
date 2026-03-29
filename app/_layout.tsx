@@ -3,14 +3,28 @@ import { Stack } from 'expo-router';
 import { Provider, useDispatch } from 'react-redux';
 import { store } from '../src/store';
 import { setUser, setProfileComplete, setAppLoading } from '../src/store/authSlice';
-import auth from '@react-native-firebase/auth';
+import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider';
 import { ThemeProvider } from '../src/context/ThemeContext';
 import { listenToUserProfile, upsertUserProfile } from '../src/services/firestoreService';
 import { clearProfile, setProfile } from '../src/store/profileSlice';
+import {
+  clearBadgeCount,
+  requestNotificationPermissions,
+  setupNotificationListeners,
+} from '../src/services/notificationService';
 import DataProvider from '../src/components/DataProvider';
 import '../global.css';
+import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+
+// GiftedChat v3.3.2 calls useKeyboardAnimation unconditionally during render,
+// which triggers Reanimated strict mode warnings we cannot fix without patching
+// the library source. Disable strict mode globally as the recommended workaround.
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
 
 GoogleSignin.configure({
   webClientId:
@@ -25,8 +39,15 @@ function AppNavigator() {
   // or is a no-op merge (subsequent logins)
   useEffect(() => {
     let profileUnsubscribe: (() => void) | null = null;
+    let notificationUnsubscribe: (() => void) | null = null;
+    const authInstance = getAuth();
 
-    const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(authInstance, async (firebaseUser) => {
+      if (notificationUnsubscribe) {
+        notificationUnsubscribe();
+        notificationUnsubscribe = null;
+      }
+
       if (firebaseUser) {
         // Hold routing until Firestore is checked
         dispatch(setAppLoading(true));
@@ -41,6 +62,9 @@ function AppNavigator() {
             isAnonymous: firebaseUser.isAnonymous,
           }),
         );
+
+        notificationUnsubscribe = setupNotificationListeners();
+        void requestNotificationPermissions(firebaseUser.uid);
         // 2. Create/merge Firestore user document (idempotent)
         // Wrapped in try/catch — silently skips if Firestore rules aren't published yet
         try {
@@ -80,12 +104,14 @@ function AppNavigator() {
         dispatch(clearProfile());
         dispatch(setProfileComplete(false));
         dispatch(setAppLoading(false));
+        void clearBadgeCount();
       }
     });
 
     return () => {
       unsubscribe();
       if (profileUnsubscribe) profileUnsubscribe();
+      if (notificationUnsubscribe) notificationUnsubscribe();
     };
   }, [dispatch]);
 
@@ -100,7 +126,7 @@ function AppNavigator() {
       />
       <Stack.Screen
         name="chat/[id]"
-        options={{ headerShown: true, title: 'Chat', animation: 'slide_from_right' }}
+        options={{ headerShown: false, title: 'Chat', animation: 'slide_from_right' }}
       />
       <Stack.Screen
         name="settings"
