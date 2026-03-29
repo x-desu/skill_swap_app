@@ -16,10 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.skillswap.app",
-      "googleServicesFile": "./GoogleService-Info.plist",
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "SkillSwap needs access to your location to automatically determine your city and country."
-      }
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.skillswap.app",
@@ -58,12 +55,6 @@
         {
           "photosPermission": "SkillSwap needs access to your photos to set a profile picture.",
           "cameraPermission": "SkillSwap needs camera access to take a profile photo."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "SkillSwap needs access to your location to automatically determine your city and country."
         }
       ]
     ]
