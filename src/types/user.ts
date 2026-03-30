@@ -29,12 +29,7 @@ export interface UserDocument {
   photoURL: string | null;
   email: string | null;
   bio: string;
-  location: { 
-    city: string; 
-    country: string;
-    lat?: number;
-    lng?: number;
-  };
+  location: { city: string; country: string };
 
   // Skills stored as plain strings for simplicity + speed of querying
   teachSkills: string[];
@@ -44,25 +39,17 @@ export interface UserDocument {
   rating: number;         // 0–5 average
   reviewCount: number;
   completedSwaps: number;
-  credits?: number;       // server-owned wallet projection
-
-  subscriptionTier?: string;
-  subscriptionStatus?: string;
-  subscriptionProductId?: string;
-  subscriptionExpiresAt?: Timestamp;
-  hasPremiumAccess?: boolean;
-  revenueCatAppUserId?: string;
+  credits: number;        // in-app credit system (future)
 
   // Flags
   isProfileComplete: boolean;
   hasPhoto: boolean;
-  hasSeenPaywall?: boolean; // Track if user has seen onboarding paywall
-  fcmToken?: string; // for push notifications (future)
-  expoPushToken?: string; // legacy
-  pushToken?: string;    // new standard push token key
+  fcmToken?: string; // legacy push token field
+  pushToken?: string; // current Expo push token field
+  hasSeenPaywall?: boolean;
+  revenueCatAppUserId?: string;
 
   // Engagement Metrics (Phase 1)
-
   isOnline?: boolean;
   lastActive?: Timestamp;
   swipeRightCount?: number;
@@ -74,14 +61,10 @@ export interface UserDocument {
   updatedAt: Timestamp;
 }
 
-// ─── Swap Requests (Legacy - DEPRECATED per SRS 18) ───────────────────────────
-// The swapRequests collection is deprecated. Use `likes` + `matches` instead.
-// These types are kept for reference only - do not use in new code.
+// ─── Swap Requests (Legacy - To be replaced by Matches) ───────────────────────
 
-/** @deprecated Use likes/matches flow instead per SRS 18 */
 export type SwapStatus = 'pending' | 'accepted' | 'declined' | 'completed';
 
-/** @deprecated Use LikeDocument/MatchDocument instead per SRS 18 */
 export interface SwapRequest {
   id?: string;          // Firestore doc ID (injected client-side)
   fromUid: string;
@@ -118,25 +101,52 @@ export interface MatchDocument {
   matchedAt: Timestamp;
   lastMessage?: string;
   lastMessageTime?: Timestamp;
-  lastMessageSender?: string;
-  unreadCount?: { [uid: string]: number }; // Track unread messages per user
-  
-  // Typing indicators (Phase 3)
-  typingStatus?: { [uid: string]: boolean };
-  typingUpdatedAt?: Timestamp;
+}
+
+// ─── Video Calls (Chat-integrated MVP) ───────────────────────────────────────
+
+export type VideoCallStatus =
+  | 'ringing'
+  | 'accepted'
+  | 'declined'
+  | 'cancelled'
+  | 'ended'
+  | 'missed';
+
+export interface VideoCallParticipant {
+  uid: string;
+  displayName: string;
+  photoURL?: string | null;
+}
+
+export interface VideoCallDocument {
+  id: string;
+  matchId: string;
+  streamCallId: string;
+  streamCallType: string;
+  initiatedFrom: 'chat';
+  callerUid: string;
+  calleeUid: string;
+  participantUids: string[];
+  caller: VideoCallParticipant;
+  callee: VideoCallParticipant;
+  status: VideoCallStatus;
+  acceptedAt?: Timestamp | number | Date | null;
+  endedAt?: Timestamp | number | Date | null;
+  endedByUid?: string | null;
+  createdAt: Timestamp | number | Date | null;
+  updatedAt: Timestamp | number | Date | null;
 }
 
 // ─── Chat System (Phase 1) ────────────────────────────────────────────────────
 
 // Maps directly to react-native-gifted-chat IMessage interface
-// NOTE: SRS 7.4 specifies `user.uid`, but we use `user._id` for GiftedChat compatibility.
-// This is an intentional deviation from the canonical schema for UI library requirements.
 export interface MessageDocument {
-  _id: string; // Firestore doc ID (also GiftedChat message ID)
+  _id: string; // Firestore doc ID
   text: string;
   createdAt: Timestamp | number | Date; // GiftedChat accepts number/Date; Firestore uses Timestamp
   user: {
-    _id: string; // Note: SRS specifies 'uid', but GiftedChat requires '_id'
+    _id: string;
     name?: string;
     avatar?: string;
   };
@@ -147,42 +157,41 @@ export interface MessageDocument {
   sent?: boolean;
   received?: boolean;
   pending?: boolean;
-  
-  // Read receipts (Phase 2)
-  readBy?: string[];              // Array of user UIDs who have read
-  deliveredTo?: string[];         // Array of user UIDs delivered to
-  status?: 'sent' | 'delivered' | 'read';
-  
-  // Reactions (Phase 6)
-  reactions?: {
-    [emoji: string]: string[];    // Array of user UIDs who reacted
-  };
 }
 
-// ─── Notification (subcollection: users/{uid}/notifications/{id}) ──────────
+// ─── In-App Notifications ─────────────────────────────────────────────────────
 
-export type NotificationType = 'swap_request' | 'swap_accepted' | 'swap_completed' | 'review' | 'new_match' | 'new_message' | 'system';
+export type NotificationType =
+  | 'swap_request'
+  | 'swap_accepted'
+  | 'swap_completed'
+  | 'review'
+  | 'new_match'
+  | 'new_message'
+  | 'system';
+
+export interface AppNotificationData {
+  matchId?: string;
+  targetUid?: string;
+  targetName?: string;
+  targetPhotoURL?: string;
+  senderId?: string;
+  senderName?: string;
+  senderPhotoURL?: string;
+  type?: string;
+}
 
 export interface AppNotification {
-  id: string; // Document ID
+  id: string;
+  userId: string;
   type: NotificationType;
   title: string;
   body: string;
-  data?: {
-    matchId?: string;
-    targetUid?: string;
-    targetName?: string;
-    targetPhotoURL?: string;
-    senderId?: string;
-    senderName?: string;
-    senderPhotoURL?: string;
-    screen?: string;
-    [key: string]: any;
-  };
+  data?: AppNotificationData;
   read: boolean;
-  createdAt: Timestamp;
+  createdAt: Timestamp | number | Date | null;
 }
 
 // ── Convenience type for creating/updating user profiles ─────────────────────
 
-export type UserProfileInput = Omit<UserDocument, 'uid' | 'createdAt' | 'updatedAt' | 'swipeRightCount' | 'swipeLeftCount' | 'mutualMatches' | 'credits' | 'subscriptionTier' | 'subscriptionStatus' | 'subscriptionProductId' | 'subscriptionExpiresAt' | 'hasPremiumAccess' | 'revenueCatAppUserId'>;
+export type UserProfileInput = Omit<UserDocument, 'uid' | 'createdAt' | 'updatedAt' | 'lastActive' | 'swipeRightCount' | 'swipeLeftCount' | 'mutualMatches'>;

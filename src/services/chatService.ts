@@ -1,338 +1,200 @@
-import { 
+import {
   getFirestore,
-  collection, 
-  doc, 
-  getDoc,
-  setDoc,
-  deleteDoc,
-  query, 
-  orderBy, 
-  limit, 
-  onSnapshot, 
-  writeBatch, 
+  writeBatch,
+  collection,
+  doc,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
   serverTimestamp,
-  getDocs,
-  startAfter,
-  updateDoc,
-  increment,
-  arrayUnion,
-  arrayRemove
 } from '@react-native-firebase/firestore';
-import storage from '@react-native-firebase/storage';
+import { getAuth } from '@react-native-firebase/auth';
+import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
 import { MessageDocument } from '../types/user';
 
-const db = () => getFirestore();
+const db = getFirestore();
+const FUNCTIONS_REGION = 'asia-south1';
+const functions = () => getFunctions(undefined, FUNCTIONS_REGION);
+
+type DeleteChatThreadResponse = {
+  deleted: boolean;
+  matchId: string;
+};
+
+type RequestSource = 'like' | 'swap_request';
+
+type RequestActionResponse = {
+  source: RequestSource;
+  sourceId: string;
+  status: 'accepted' | 'declined' | 'completed' | 'pending';
+  matchId?: string;
+};
+
+function isUnauthenticatedCallableError(error: unknown): boolean {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+  } | null;
+
+  return (
+    maybeError?.code === 'functions/unauthenticated' ||
+    maybeError?.code === 'unauthenticated' ||
+    maybeError?.message === 'UNAUTHENTICATED' ||
+    maybeError?.details === 'UNAUTHENTICATED'
+  );
+}
+
+async function ensureFunctionsAuthReady(forceRefresh = false): Promise<void> {
+  const currentUser = getAuth().currentUser;
+
+  if (!currentUser) {
+    throw new Error('Your session is still loading. Please try again in a moment.');
+  }
+
+  await currentUser.getIdToken(forceRefresh);
+}
 
 /**
  * Sends a new message in a specific match conversation.
- * Optimized for horizontal scaling and low latency by using batch writes.
+ * Also updates the `lastMessage` and `lastMessageTime` on the Match doc.
  */
-export const sendMessage = async (
-  matchId: string, 
-  message: MessageDocument, 
-  recipientUid: string
-): Promise<void> => {
-  try {
-    console.log('[ChatService] Sending message to:', recipientUid, 'match:', matchId);
-    const batch = writeBatch(db());
+export const sendMessage = async (matchId: string, message: MessageDocument): Promise<void> => {
+  const batch = writeBatch(db);
+  const matchRef = doc(collection(db, 'matches'), matchId);
+  const messagesRef = doc(collection(matchRef, 'messages'), message._id);
 
-    // 1. Add the message to the subcollection
-    const messagesRef = doc(db(), 'matches', matchId, 'messages', message._id);
-    
-    batch.set(messagesRef, {
-      ...message,
-      createdAt: serverTimestamp(),
-      status: 'sent',
-      deliveredTo: [],
-      readBy: [],
-    });
-
-    // 2. Update the parent match document with the latest message snippet and unread count
-    const matchRef = doc(db(), 'matches', matchId);
-    batch.set(matchRef, {
-      lastMessage: message.text || (message.image ? '📷 Image' : 'New message'),
-      lastMessageTime: serverTimestamp(),
-      lastMessageSender: message.user._id,
-      unreadCount: { 
-        [recipientUid]: increment(1) 
-      },
-    }, { merge: true });
-
-    // Note: Notifications are created by Cloud Function onMessageCreated trigger
-    // Do not add notification creation here - client is not allowed per SRS
-
-    await batch.commit();
-    console.log('[ChatService] Message sent successfully');
-  } catch (error) {
-    console.error('[ChatService] Error sending message:', error);
-    throw error;
-  }
-};
-
-/**
- * Marks all messages in a match as read for the current user.
- * Resets the unread count for the current user.
- */
-export const markMatchAsRead = async (
-  matchId: string, 
-  currentUid: string
-): Promise<void> => {
-  try {
-    const matchRef = doc(db(), 'matches', matchId);
-    // Check existence first to avoid firestore/not-found error
-    const snap = await getDoc(matchRef);
-    if (!snap.exists) return;
-
-    await updateDoc(matchRef, {
-      [`unreadCount.${currentUid}`]: 0,
-    });
-  } catch (error) {
-    console.warn('[ChatService] markMatchAsRead failed:', error);
-  }
-};
-
-/**
- * Marks a specific message as read by the current user.
- * Updates the readBy array and status.
- */
-export const markMessageAsRead = async (
-  matchId: string,
-  messageId: string,
-  currentUid: string
-): Promise<void> => {
-  try {
-    const messageRef = doc(db(), 'matches', matchId, 'messages', messageId);
-    const snap = await getDoc(messageRef);
-    if (!snap.exists) return; // Silent return if message was deleted
-    
-    await updateDoc(messageRef, {
-      readBy: arrayUnion(currentUid),
-      status: 'read',
-    });
-  } catch (error) {
-    console.warn('[ChatService] markMessageAsRead failed:', error);
-  }
-};
-
-/**
- * Marks a specific message as delivered to a user.
- */
-export const markMessageAsDelivered = async (
-  matchId: string,
-  messageId: string,
-  userUid: string
-): Promise<void> => {
-  try {
-    const messageRef = doc(db(), 'matches', matchId, 'messages', messageId);
-    const snap = await getDoc(messageRef);
-    if (!snap.exists) return;
-    
-    await updateDoc(messageRef, {
-      deliveredTo: arrayUnion(userUid),
-      status: 'delivered',
-    });
-  } catch (error) {
-    console.warn('[ChatService] markMessageAsDelivered failed:', error);
-  }
-};
-
-/**
- * Updates the typing status for a user in a match.
- * Typing status auto-expires after 3 seconds of inactivity.
- */
-export const updateTypingStatus = async (
-  matchId: string,
-  userUid: string,
-  isTyping: boolean
-): Promise<void> => {
-  try {
-    const matchRef = doc(db(), 'matches', matchId);
-    const snap = await getDoc(matchRef);
-    if (!snap.exists) return;
-
-    await updateDoc(matchRef, {
-      [`typingStatus.${userUid}`]: isTyping,
-      typingUpdatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.warn('[ChatService] updateTypingStatus failed (match might not exist):', error);
-  }
-};
-
-/**
- * Real-time listener for typing status in a match.
- * Returns an unsubscribe function.
- */
-export const subscribeToTypingStatus = (
-  matchId: string,
-  onUpdate: (typingStatus: { [uid: string]: boolean }) => void
-) => {
-  const matchRef = doc(db(), 'matches', matchId);
-  
-  return onSnapshot(matchRef, (snapshot) => {
-    if (!snapshot.exists) {
-      onUpdate({});
-      return;
-    }
-    const data = snapshot.data();
-    // Check if typing status is stale (older than 5 seconds)
-    const typingUpdatedAt = data?.typingUpdatedAt?.toDate();
-    const isStale = typingUpdatedAt && (Date.now() - typingUpdatedAt.getTime() > 5000);
-    
-    if (isStale) {
-      onUpdate({});
-    } else {
-      onUpdate(data?.typingStatus || {});
-    }
+  // 1. Add the message to the subcollection
+  batch.set(messagesRef, {
+    ...message,
+    // Ensure we use server timestamp for consistency, fallback to local if needed
+    createdAt: serverTimestamp(),
   });
-};
 
-/**
- * Real-time listener for messages in a specific match.
- * Returns an unsubscribe function.
- */
-export const subscribeToMessages = (
-  matchId: string,
-  onUpdate: (messages: MessageDocument[]) => void
-) => {
-  const q = query(
-    collection(db(), 'matches', matchId, 'messages'),
-    orderBy('createdAt', 'desc'),
-    limit(50)
-  );
-
-  return onSnapshot(q, (snapshot) => {
-    const messages = snapshot.docs.map((docSnapshot: any) => {
-      const data = docSnapshot.data();
-      return {
-        ...data,
-        createdAt: data.createdAt?.toDate()?.getTime() || Date.now(),
-      } as MessageDocument;
-    });
-    
-    onUpdate(messages);
+  // 2. Update the parent match document with the latest message snippet
+  batch.update(matchRef, {
+    lastMessage: message.text || (message.image ? '📷 Image' : 'New message'),
+    lastMessageTime: serverTimestamp(),
   });
+
+  await batch.commit();
 };
 
 /**
- * Load more (older) messages for pagination.
- * Returns older messages before the given timestamp.
- */
-export const loadMoreMessages = async (
-  matchId: string,
-  beforeTimestamp: number,
-  limitCount: number = 20
-): Promise<MessageDocument[]> => {
-  const beforeDate = new Date(beforeTimestamp);
-  
-  const q = query(
-    collection(db(), 'matches', matchId, 'messages'),
-    orderBy('createdAt', 'desc'),
-    startAfter(beforeDate),
-    limit(limitCount)
-  );
-
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((docSnapshot: any) => {
-    const data = docSnapshot.data();
-    return {
-      ...data,
-      createdAt: data.createdAt?.toDate()?.getTime() || Date.now(),
-    } as MessageDocument;
-  });
-};
-
-/**
- * Upload an image to Firebase Storage and send as a message.
- * Returns the download URL of the uploaded image.
+ * Sends an image message in a specific match conversation.
  */
 export const sendImageMessage = async (
   matchId: string,
   imageUri: string,
-  senderUid: string,
-  senderName: string,
-  recipientUid: string,
-  senderAvatar?: string
-): Promise<string> => {
-  // Generate a unique filename
-  const filename = `${matchId}_${Date.now()}.jpg`;
-  const storageRef = storage().ref(`chat-images/${matchId}/${filename}`);
-  
-  // Upload the image
-  await storageRef.putFile(imageUri);
-  
-  // Get the download URL
-  const downloadUrl = await storageRef.getDownloadURL();
-  
-  // Send message with image
-  const batch = writeBatch(db());
-  const messageId = crypto.randomUUID();
-  const messagesRef = doc(db(), 'matches', matchId, 'messages', messageId);
-  
+  user: { _id: string; name: string; avatar?: string }
+): Promise<void> => {
+  const batch = writeBatch(db);
+  const matchRef = doc(collection(db, 'matches'), matchId);
+  const messageId = Math.random().toString(36).substring(7);
+  const messagesRef = doc(collection(matchRef, 'messages'), messageId);
+
+  // 1. Add the image message to the subcollection
   batch.set(messagesRef, {
     _id: messageId,
     text: '',
-    image: downloadUrl,
+    image: imageUri,
+    user,
     createdAt: serverTimestamp(),
-    user: {
-      _id: senderUid,
-      name: senderName,
-      avatar: senderAvatar,
-    },
-    status: 'sent',
-    deliveredTo: [],
-    readBy: [],
   });
-  
-  // Update match document
-  const matchRef = doc(db(), 'matches', matchId);
-  batch.set(matchRef, {
+
+  // 2. Update the parent match document
+  batch.update(matchRef, {
     lastMessage: '📷 Image',
     lastMessageTime: serverTimestamp(),
-    lastMessageSender: senderUid,
-    unreadCount: {
-      [recipientUid]: increment(1)
-    },
-  }, { merge: true });
-  
-  // Note: Notifications are created by Cloud Function onMessageCreated trigger
-  // Do not add notification creation here - client is not allowed per SRS
-  
+  });
+
   await batch.commit();
-  
-  return downloadUrl;
 };
 
 /**
- * Toggle an emoji reaction on a message.
- * Adds the reaction if user hasn't reacted, removes if they have.
+ * Real-time listener for messages in a specific match.
+ * ONLY mount this when the Chat Screen is OPEN!
  */
-export const toggleReaction = async (
+export const listenToMessages = (
   matchId: string,
-  messageId: string,
-  emoji: string,
-  userUid: string
-): Promise<void> => {
-  const messageRef = doc(db(), 'matches', matchId, 'messages', messageId);
-  const messageSnap = await getDoc(messageRef);
-  
-  if (!messageSnap.exists) {
-    throw new Error('Message not found');
-  }
-  
-  const data = messageSnap.data() as MessageDocument;
-  const reactions = data.reactions || {};
-  const usersWhoReacted = reactions[emoji] || [];
-  
-  if (usersWhoReacted.includes(userUid)) {
-    // User already reacted - remove their reaction
-    await updateDoc(messageRef, {
-      [`reactions.${emoji}`]: arrayRemove(userUid),
+  onUpdate: (messages: MessageDocument[]) => void
+) => {
+  const matchRef = doc(collection(db, 'matches'), matchId);
+  const messagesQuery = query(
+    collection(matchRef, 'messages'),
+    orderBy('createdAt', 'desc'),
+    limit(50),
+  );
+
+  return onSnapshot(messagesQuery, (snapshot) => {
+      const messages = snapshot.docs.map((messageDoc: any) => {
+        const data = messageDoc.data();
+        return {
+          ...data,
+          // Gifted Chat needs Date objects or numbers for `createdAt`
+          createdAt: data.createdAt?.toDate()?.getTime() || Date.now(),
+        } as MessageDocument;
+      });
+      onUpdate(messages);
+    }, (error) => {
+      if ((error as any)?.code === 'firestore/permission-denied') {
+        console.warn(
+          '[ChatService] Messages listener permission denied. Verify the live Firestore rules for matches/{id}/messages.',
+        );
+        onUpdate([]);
+        return;
+      }
+
+      console.error('[ChatService] Messages listener error:', error);
     });
-  } else {
-    // User hasn't reacted - add their reaction
-    await updateDoc(messageRef, {
-      [`reactions.${emoji}`]: arrayUnion(userUid),
-    });
+};
+
+export const deleteChatThread = async (matchId: string): Promise<DeleteChatThreadResponse> => {
+  await ensureFunctionsAuthReady(false);
+  const callable = httpsCallable(functions(), 'deleteChatThread');
+
+  try {
+    const result = await callable({ matchId });
+    return result.data as DeleteChatThreadResponse;
+  } catch (error) {
+    if (!isUnauthenticatedCallableError(error)) {
+      throw error;
+    }
+
+    await ensureFunctionsAuthReady(true);
+    const retryResult = await callable({ matchId });
+    return retryResult.data as DeleteChatThreadResponse;
   }
 };
+
+async function callRequestAction(
+  name: 'acceptRequest' | 'declineRequest',
+  params: { source: RequestSource; sourceId: string },
+): Promise<RequestActionResponse> {
+  await ensureFunctionsAuthReady(false);
+  const callable = httpsCallable(functions(), name);
+
+  try {
+    const result = await callable(params);
+    return result.data as RequestActionResponse;
+  } catch (error) {
+    if (!isUnauthenticatedCallableError(error)) {
+      throw error;
+    }
+
+    await ensureFunctionsAuthReady(true);
+    const retryResult = await callable(params);
+    return retryResult.data as RequestActionResponse;
+  }
+}
+
+export const acceptRequest = (params: {
+  source: RequestSource;
+  sourceId: string;
+}): Promise<RequestActionResponse> => callRequestAction('acceptRequest', params);
+
+export const declineRequest = (params: {
+  source: RequestSource;
+  sourceId: string;
+}): Promise<RequestActionResponse> => callRequestAction('declineRequest', params);

@@ -1,5 +1,14 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { getAuth, signInWithCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut as firebaseSignOut, GoogleAuthProvider, AppleAuthProvider } from '@react-native-firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  AppleAuthProvider,
+  signInWithCredential,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signOut as firebaseSignOut,
+} from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { appleAuth } from '@invertase/react-native-apple-authentication';
 
@@ -12,7 +21,6 @@ export interface AuthUser {
   photoURL: string | null;
   isAnonymous: boolean;
 }
-
 
 interface AuthState {
   user: AuthUser | null;
@@ -38,10 +46,11 @@ export const signInWithGoogle = createAsyncThunk(
   'auth/signInWithGoogle',
   async (_, { rejectWithValue }) => {
     try {
+      const auth = getAuth();
       await GoogleSignin.hasPlayServices();
       const { data } = await GoogleSignin.signIn();
       const credential = GoogleAuthProvider.credential(data!.idToken);
-      await signInWithCredential(getAuth(), credential);
+      await signInWithCredential(auth, credential);
       return 'google' as const;
     } catch (e: any) {
       return rejectWithValue(e.message ?? 'Google sign-in failed');
@@ -53,6 +62,7 @@ export const signInWithApple = createAsyncThunk(
   'auth/signInWithApple',
   async (_, { rejectWithValue }) => {
     try {
+      const auth = getAuth();
       const res = await appleAuth.performRequest({
         requestedOperation: appleAuth.Operation.LOGIN,
         requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
@@ -61,7 +71,7 @@ export const signInWithApple = createAsyncThunk(
         res.identityToken,
         res.nonce,
       );
-      await signInWithCredential(getAuth(), credential);
+      await signInWithCredential(auth, credential);
       return 'apple' as const;
     } catch (e: any) {
       return rejectWithValue(e.message ?? 'Apple sign-in failed');

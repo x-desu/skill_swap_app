@@ -1,10 +1,11 @@
-import React, { useRef, useEffect } from 'react';
-import { View, TouchableOpacity, StyleSheet, Dimensions, Animated, Text } from 'react-native';
+import React, { useRef, useEffect, memo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Animated, Image } from 'react-native';
 import { Tabs, router } from 'expo-router';
-import { Home, Search, Heart, User, Bell } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
+import { Home, Search, Heart, User } from 'lucide-react-native';
+import { useSelector } from 'react-redux';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useNotifications } from '../../src/hooks/useNotifications';
+import type { RootState } from '../../src/store';
 
 const { width } = Dimensions.get('window');
 
@@ -69,12 +70,15 @@ function AnimatedTabIcon({
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
     const { unreadCount } = useNotifications();
+    const firestoreProfile = useSelector((s: RootState) => s.profile.profile);
+    const authUser = useSelector((s: RootState) => s.auth.user);
+    const avatarPhoto = firestoreProfile?.photoURL ?? authUser?.photoURL ?? null;
 
     const tabs = [
-        { name: 'index', label: 'Home', icon: Home },
-        { name: 'discover', label: 'Search', icon: Search },
-        { name: 'matches', label: 'Swaps', icon: Heart },
-        { name: 'profile', label: 'Profile', icon: User },
+        { name: 'index', label: 'Home', icon: Home, badge: 0 },
+        { name: 'discover', label: 'Discovery', icon: Search, badge: 0 },
+        { name: 'matches', label: 'Swaps', icon: Heart, badge: unreadCount },
+        { name: 'profile', label: 'Profile', icon: User, badge: 0 },
     ];
 
     // Animate the pill in on mount
@@ -107,33 +111,61 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 }
             ]}
         >
-            {/* Glassmorphic pill container */}
             <View style={styles.tabBarContainer}>
-                <BlurView intensity={32} tint="dark" style={styles.blurView}>
-                    <View style={styles.tabBarInner}>
-                        {tabs.map((tab) => {
-                            const routeIndex = state.routes.findIndex((r: any) => r.name === tab.name);
-                            const isFocused = state.index === routeIndex;
-                            const IconComponent = tab.icon;
+                <View style={styles.tabBarInner}>
+                    {tabs.map((tab) => {
+                        const routeIndex = state.routes.findIndex((r: any) => r.name === tab.name);
+                        const isFocused = state.index === routeIndex;
+                        const IconComponent = tab.icon;
 
-                            const onPress = () => {
-                                if (routeIndex >= 0) {
-                                    navigation.navigate(state.routes[routeIndex].name);
-                                }
-                            };
+                        const onPress = () => {
+                            if (routeIndex >= 0) {
+                                navigation.navigate(state.routes[routeIndex].name);
+                            }
+                        };
 
+                        // ── Profile tab: real avatar or fallback icon ──
+                        if (tab.name === 'profile') {
                             return (
-                                <AnimatedTabIcon
+                                <TouchableOpacity
                                     key={tab.name}
-                                    IconComponent={IconComponent}
-                                    isFocused={isFocused}
                                     onPress={onPress}
-                                    badgeCount={tab.name === 'matches' ? unreadCount : undefined}
-                                />
+                                    activeOpacity={0.7}
+                                    style={[
+                                        styles.iconContainer,
+                                        isFocused && styles.iconContainerActive,
+                                    ]}
+                                >
+                                    {avatarPhoto ? (
+                                        <Image
+                                            source={{ uri: avatarPhoto }}
+                                            style={[
+                                                styles.avatarImg,
+                                                isFocused && styles.avatarImgActive,
+                                            ]}
+                                        />
+                                    ) : (
+                                        <IconComponent
+                                            size={22}
+                                            color={isFocused ? COLORS.rosePrimary : COLORS.textMuted}
+                                            fill={isFocused ? COLORS.rose20 : 'transparent'}
+                                        />
+                                    )}
+                                </TouchableOpacity>
                             );
-                        })}
-                    </View>
-                </BlurView>
+                        }
+
+                        return (
+                            <AnimatedTabIcon
+                                key={tab.name}
+                                IconComponent={IconComponent}
+                                isFocused={isFocused}
+                                onPress={onPress}
+                                badgeCount={tab.badge}
+                            />
+                        );
+                    })}
+                </View>
             </View>
         </Animated.View>
     );
@@ -154,11 +186,12 @@ export default function TabLayout() {
             tabBar={(props) => <CustomTabBar {...props} />}
         >
             <Tabs.Screen name="index" options={{ title: 'Home' }} />
-            <Tabs.Screen name="discover" options={{ title: 'Search' }} />
+            <Tabs.Screen name="discover" options={{ title: 'Discovery' }} />
             <Tabs.Screen name="matches" options={{ title: 'Swaps' }} />
             <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
             {/* Hide other tabs */}
             <Tabs.Screen name="wallet" options={{ href: null }} />
+            <Tabs.Screen name="messages" options={{ href: null }} />
             <Tabs.Screen name="home" options={{ href: null }} />
         </Tabs>
     );
@@ -177,8 +210,6 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: COLORS.borderSubtle,
-    },
-    blurView: {
         backgroundColor: COLORS.bgNav,
         paddingHorizontal: 16,
         paddingVertical: 10,
@@ -195,28 +226,38 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: 'transparent',
-        position: 'relative',
     },
     iconContainerActive: {
         backgroundColor: COLORS.rose20,
     },
     badge: {
         position: 'absolute',
-        top: 6,
-        right: 6,
+        top: 0,
+        right: 0,
         backgroundColor: COLORS.badgeRed,
-        borderRadius: 10,
         minWidth: 18,
         height: 18,
-        alignItems: 'center',
+        borderRadius: 9,
         justifyContent: 'center',
+        alignItems: 'center',
         paddingHorizontal: 4,
-        borderWidth: 2,
+        borderWidth: 1.5,
         borderColor: COLORS.bgNav,
     },
     badgeText: {
         color: '#fff',
         fontSize: 10,
-        fontWeight: '700',
+        fontWeight: 'bold',
+    },
+    avatarImg: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    avatarImgActive: {
+        borderColor: COLORS.rosePrimary,
+        borderWidth: 2,
     },
 });

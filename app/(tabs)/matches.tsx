@@ -1,280 +1,623 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, FlatList } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  FlatList,
+  Alert,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useSelector } from 'react-redux';
-import Animated, { FadeIn, Layout } from 'react-native-reanimated';
-import { MessageCircle, HeartHandshake } from 'lucide-react-native';
-
-import { useMatches } from '../../src/hooks/useMatches';
-import { useLikes } from '../../src/hooks/useLikes';
-import { useMatchUserProfiles } from '../../src/hooks/useMatchUserProfiles';
+import { useDispatch } from 'react-redux';
+import { ArrowLeftRight, MessageSquare, Trash2 } from 'lucide-react-native';
 import UserAvatar from '../../src/components/UserAvatar';
-import { likeUser } from '../../src/services/matchingService';
-import type { LikeDocument, MatchDocument } from '../../src/types/user';
-import type { RootState } from '../../src/store';
+import {
+  type SwapMessageRow,
+  type SwapRequestRow,
+  type SwapsSegment,
+  useSwapsData,
+} from '../../src/hooks/useSwapsData';
+import { acceptRequest, declineRequest, deleteChatThread } from '../../src/services/chatService';
+import { removeRoomMessages } from '../../src/store/chatSlice';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
-  bgBase: '#0d0202',
-  bgCard: 'rgba(255, 26, 92, 0.05)',
-  textPrimary: '#ffffff',
-  textSecondary: 'rgba(255, 255, 255, 0.6)',
+  roseSurface: '#7b1f38',
+  bgDeep: '#150304',
+  bgCard: '#1e0a0d',
   borderLight: 'rgba(255, 255, 255, 0.08)',
-  success: '#34d399',
-  danger: '#ff4d4d',
+  textPrimary: '#ffffff',
+  textSecondary: 'rgba(255, 255, 255, 0.72)',
+  textMuted: 'rgba(255, 255, 255, 0.45)',
+  badge: '#ff4d7a',
+  requestIncoming: 'rgba(52, 211, 153, 0.16)',
+  requestOutgoing: 'rgba(255, 26, 92, 0.16)',
 };
 
-type TabType = 'requests' | 'matches';
+const formatRowTime = (timestamp: number) => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
 
-export default function MatchesScreen() {
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const authUser = useSelector((state: RootState) => state.auth.user);
-  
-  const [activeTab, setActiveTab] = useState<TabType>('requests');
+const formatStatus = (status: string) => {
+  if (!status) return 'Pending';
+  return status.charAt(0).toUpperCase() + status.slice(1);
+};
 
-  const { pendingIncoming, pendingOutgoing, isLoading: isLoadingLikes } = useLikes(authUser?.uid);
-  const { matches, loading: isLoadingMatches } = useMatches(authUser?.uid || null);
-  
-  const allLikedUids = [...pendingIncoming.map(l => l.fromUid), ...pendingOutgoing.map(l => l.toUid)];
-  const matchedUserUids = matches
-    .map(m => m.users.find(uid => uid !== authUser?.uid))
-    .filter((uid): uid is string => !!uid);
-  
-  const allUids = [...new Set([...allLikedUids, ...matchedUserUids])];
-  const { profiles: userProfiles } = useMatchUserProfiles(allUids);
+type SwapListRow = SwapMessageRow | SwapRequestRow;
 
-  const handleLikeBack = async (fromUid: string) => {
-    try {
-      const newMatch = await likeUser(authUser!.uid, fromUid);
-      if (newMatch) {
-        Alert.alert('🎉 It\'s a Match!', 'You both liked each other! Start chatting now.');
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Could not like back. Please try again.');
-    }
-  };
+function SegmentedControl({
+  value,
+  onChange,
+}: {
+  value: SwapsSegment;
+  onChange: (segment: SwapsSegment) => void;
+}) {
+  const options: Array<{ key: SwapsSegment; label: string; icon: React.ReactNode }> = [
+    {
+      key: 'requests',
+      label: 'Requests',
+      icon: <ArrowLeftRight color={value === 'requests' ? '#fff' : COLORS.textSecondary} size={18} />,
+    },
+    {
+      key: 'messages',
+      label: 'Messages',
+      icon: <MessageSquare color={value === 'messages' ? '#fff' : COLORS.textSecondary} size={18} />,
+    },
+  ];
 
-  const handlePressMatch = (match: MatchDocument) => {
-    if (!authUser) return;
-    const targetUid = match.users.find(uid => uid !== authUser.uid);
-    if (!targetUid) return;
-    
-    const profile = userProfiles.get(targetUid);
-    
-    router.push({
-      pathname: '/chat/[id]',
-      params: { 
-        id: match.id, 
-        targetUid,
-        name: profile?.displayName || '',
-        photoURL: profile?.photoURL || ''
-      },
-    });
-  };
-
-  const renderIncoming = ({ item }: { item: LikeDocument }) => {
-    const profile = userProfiles.get(item.fromUid);
-    const displayName = profile?.displayName || `User ${item.fromUid.slice(0, 4)}...`;
-    
-    return (
-      <Animated.View entering={FadeIn} layout={Layout.springify()} style={styles.card}>
-        <View style={styles.cardRow}>
-          <UserAvatar uid={item.fromUid} displayName={displayName} photoURL={profile?.photoURL} size={48} />
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardTitle}>{displayName}</Text>
-            <Text style={styles.cardSubtext}>Liked your profile! Like back to match.</Text>
-          </View>
-        </View>
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={[styles.btn, styles.btnAccept]} onPress={() => handleLikeBack(item.fromUid)}>
-            <Text style={styles.btnText}>Like Back</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    );
-  };
-
-  const renderOutgoing = ({ item }: { item: LikeDocument }) => {
-    const profile = userProfiles.get(item.toUid);
-    const displayName = profile?.displayName || `User ${item.toUid.slice(0, 4)}...`;
-    
-    return (
-      <Animated.View entering={FadeIn} layout={Layout.springify()} style={styles.card}>
-        <View style={styles.cardRow}>
-          <UserAvatar uid={item.toUid} displayName={displayName} photoURL={profile?.photoURL} size={48} />
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardTitle}>{displayName}</Text>
-            <Text style={styles.cardSubtext}>You liked them. Waiting for them to like you back...</Text>
-          </View>
-        </View>
-      </Animated.View>
-    );
-  };
-
-  const renderMatch = ({ item }: { item: MatchDocument }) => {
-    const otherUid = item.users.find(uid => uid !== authUser?.uid);
-    const profile = otherUid ? userProfiles.get(otherUid) : null;
-    const displayName = profile?.displayName || `User ${otherUid?.slice(0, 4)}...`;
-    const photoURL = profile?.photoURL || null;
-    const unreadCount = authUser?.uid ? (item.unreadCount?.[authUser.uid] || 0) : 0;
-    const hasUnread = unreadCount > 0;
-    
-    return (
-      <TouchableOpacity style={styles.chatRow} onPress={() => handlePressMatch(item)} activeOpacity={0.7}>
-        <View style={styles.avatarContainer}>
-          <UserAvatar uid={otherUid || 'unknown'} displayName={displayName} photoURL={photoURL} size={56} />
-          {hasUnread && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.chatContent}>
-          <View style={styles.chatHeader}>
-            <Text style={[styles.chatName, hasUnread && styles.chatNameUnread]}>{displayName}</Text>
-            {item.lastMessageTime && (
-              <Text style={styles.chatTime}>
-                {new Date(item.lastMessageTime.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+  return (
+    <View style={styles.segmentedOuter}>
+      {options.map((option) => {
+        const active = option.key === value;
+        return (
+          <TouchableOpacity
+            key={option.key}
+            style={[styles.segmentButton, active && styles.segmentButtonActive]}
+            activeOpacity={0.85}
+            onPress={() => onChange(option.key)}
+          >
+            <View style={styles.segmentContent}>
+              {option.icon}
+              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                {option.label}
               </Text>
-            )}
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function MessageRow({
+  item,
+  onPress,
+  onDelete,
+  isDeleting,
+}: {
+  item: SwapMessageRow;
+  onPress: () => void;
+  onDelete: () => void;
+  isDeleting: boolean;
+}) {
+  return (
+    <View style={styles.row}>
+      <TouchableOpacity
+        style={styles.rowTapArea}
+        activeOpacity={0.82}
+        onPress={onPress}
+        disabled={isDeleting}
+      >
+        <View style={styles.avatarWrap}>
+          <UserAvatar
+            uid={item.targetUid}
+            displayName={item.title}
+            photoURL={item.photoURL}
+            size={58}
+          />
+          {item.unreadCount > 0 ? (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadBadgeText}>
+                {item.unreadCount > 9 ? '9+' : item.unreadCount}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.rowContent}>
+          <View style={styles.rowHeader}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+            <Text style={styles.rowTime}>{formatRowTime(item.timestamp)}</Text>
           </View>
-          <Text style={[styles.chatMessage, hasUnread && styles.chatMessageUnread]} numberOfLines={1}>
-            {item.lastMessage || 'New Match! Say hello.'}
+          <Text style={styles.rowPreview} numberOfLines={1}>
+            {item.preview}
           </Text>
         </View>
       </TouchableOpacity>
-    );
-  };
+
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Delete chat with ${item.title}`}
+        activeOpacity={0.8}
+        disabled={isDeleting}
+        onPress={onDelete}
+        style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
+      >
+        {isDeleting ? (
+          <ActivityIndicator size="small" color={COLORS.rosePrimary} />
+        ) : (
+          <Trash2 color={COLORS.textMuted} size={18} />
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function RequestRow({
+  item,
+  isActing,
+  onAccept,
+  onDecline,
+}: {
+  item: SwapRequestRow;
+  isActing: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  const directionLabel = item.direction === 'incoming' ? 'Incoming' : 'Sent';
+  const pillLabel = `${directionLabel} · ${formatStatus(item.status)}`;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <Text style={styles.headerTitle}>Swaps</Text>
+    <View style={styles.row}>
+      <View style={styles.rowTapArea}>
+        <View style={styles.avatarWrap}>
+          <UserAvatar
+            uid={item.targetUid}
+            displayName={item.title}
+            photoURL={item.photoURL}
+            size={58}
+          />
+        </View>
 
-      <View style={styles.segmentContainer}>
-        <TouchableOpacity
-          style={[styles.segmentBtn, activeTab === 'requests' && styles.segmentBtnActive]}
-          onPress={() => setActiveTab('requests')}
-        >
-          <HeartHandshake size={18} color={activeTab === 'requests' ? '#fff' : COLORS.textSecondary} />
-          <Text style={[styles.segmentText, activeTab === 'requests' && styles.segmentTextActive]}>Requests</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.segmentBtn, activeTab === 'matches' && styles.segmentBtnActive]}
-          onPress={() => setActiveTab('matches')}
-        >
-          <MessageCircle size={18} color={activeTab === 'matches' ? '#fff' : COLORS.textSecondary} />
-          <Text style={[styles.segmentText, activeTab === 'matches' && styles.segmentTextActive]}>Messages</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.rowContent}>
+          <View style={styles.rowHeader}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+            <Text style={styles.rowTime}>{formatRowTime(item.timestamp)}</Text>
+          </View>
 
-      <View style={{ flex: 1 }}>
-        {activeTab === 'requests' ? (
-          isLoadingLikes ? (
-            <ActivityIndicator size="large" color={COLORS.rosePrimary} style={{ marginTop: 40 }} />
-          ) : (
-            <FlatList
-              data={[...pendingIncoming, ...pendingOutgoing]}
-              keyExtractor={item => item.id!}
-              renderItem={(props) => {
-                if (pendingIncoming.some(p => p.id === props.item.id)) return renderIncoming(props);
-                return renderOutgoing(props);
-              }}
-              contentContainerStyle={styles.listContent}
-            />
-          )
-        ) : (
-          isLoadingMatches ? (
-            <ActivityIndicator size="large" color={COLORS.rosePrimary} style={{ marginTop: 40 }} />
-          ) : (
-            <FlatList
-              data={matches}
-              keyExtractor={item => item.id}
-              renderItem={renderMatch}
-              contentContainerStyle={styles.listContent}
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
-            />
-          )
-        )}
+          <View style={styles.requestMetaRow}>
+            <View
+              style={[
+                styles.requestPill,
+                item.direction === 'incoming' ? styles.requestPillIncoming : styles.requestPillOutgoing,
+              ]}
+            >
+              <Text style={styles.requestPillText}>{pillLabel}</Text>
+            </View>
+            <Text style={styles.requestSummary} numberOfLines={1}>
+              {item.summary}
+            </Text>
+          </View>
+
+          <Text style={styles.rowPreview} numberOfLines={1}>
+            {item.message}
+          </Text>
+
+          {item.canAccept || item.canDecline ? (
+            <View style={styles.requestActions}>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                disabled={isActing}
+                onPress={onDecline}
+                style={[styles.requestActionButton, styles.requestDeclineButton, isActing && styles.requestActionDisabled]}
+              >
+                {isActing ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.requestActionText}>Decline</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                disabled={isActing}
+                onPress={onAccept}
+                style={[styles.requestActionButton, styles.requestAcceptButton, isActing && styles.requestActionDisabled]}
+              >
+                {isActing ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.requestActionText}>Accept</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
       </View>
     </View>
   );
 }
 
+export default function MatchesScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const dispatch = useDispatch();
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const { isLoading, messageRows, requestRows } = useSwapsData();
+  const [activeSegment, setActiveSegment] = useState<SwapsSegment>('messages');
+  const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
+  const [requestActionId, setRequestActionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (params.tab === 'requests') {
+      setActiveSegment('requests');
+      return;
+    }
+    if (params.tab === 'messages') {
+      setActiveSegment('messages');
+    }
+  }, [params.tab]);
+
+  const activeData = useMemo<SwapListRow[]>(
+    () => (activeSegment === 'messages' ? messageRows : requestRows),
+    [activeSegment, messageRows, requestRows],
+  );
+
+  const confirmDeleteChat = useCallback(
+    async (item: SwapMessageRow) => {
+      try {
+        setDeletingMatchId(item.matchId);
+        await deleteChatThread(item.matchId);
+        dispatch(removeRoomMessages(item.matchId));
+      } catch (error: any) {
+        console.error('[Matches] Failed to delete chat:', error);
+        Alert.alert(
+          'Unable to delete chat',
+          error?.message || 'Please try again in a moment.',
+        );
+      } finally {
+        setDeletingMatchId((currentMatchId) =>
+          currentMatchId === item.matchId ? null : currentMatchId,
+        );
+      }
+    },
+    [dispatch],
+  );
+
+  const handleDeletePress = useCallback(
+    (item: SwapMessageRow) => {
+      if (deletingMatchId) {
+        return;
+      }
+
+      Alert.alert(
+        'Delete chat?',
+        `This will permanently remove your conversation with ${item.title} for both participants.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Chat',
+            style: 'destructive',
+            onPress: () => {
+              void confirmDeleteChat(item);
+            },
+          },
+        ],
+      );
+    },
+    [confirmDeleteChat, deletingMatchId],
+  );
+
+  const handleAcceptRequest = useCallback(
+    async (item: SwapRequestRow) => {
+      try {
+        setRequestActionId(item.id);
+        await acceptRequest({ source: item.source, sourceId: item.sourceId });
+        Alert.alert('Request accepted', `${item.title} is now available in Messages.`);
+      } catch (error: any) {
+        console.error('[Matches] Failed to accept request:', error);
+        Alert.alert(
+          'Unable to accept request',
+          error?.message || 'Please try again in a moment.',
+        );
+      } finally {
+        setRequestActionId((currentId) => (currentId === item.id ? null : currentId));
+      }
+    },
+    [],
+  );
+
+  const handleDeclineRequest = useCallback(
+    async (item: SwapRequestRow) => {
+      try {
+        setRequestActionId(item.id);
+        await declineRequest({ source: item.source, sourceId: item.sourceId });
+      } catch (error: any) {
+        console.error('[Matches] Failed to decline request:', error);
+        Alert.alert(
+          'Unable to decline request',
+          error?.message || 'Please try again in a moment.',
+        );
+      } finally {
+        setRequestActionId((currentId) => (currentId === item.id ? null : currentId));
+      }
+    },
+    [],
+  );
+
+  const emptyCopy =
+    activeSegment === 'messages'
+      ? 'No messages yet. Match with someone to start chatting.'
+      : 'No swap requests right now. New requests will appear here.';
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={COLORS.rosePrimary} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <Text style={styles.title}>Swaps</Text>
+      <SegmentedControl value={activeSegment} onChange={setActiveSegment} />
+
+      <FlatList<SwapListRow>
+        data={activeData}
+        key={activeSegment}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) =>
+          activeSegment === 'messages' && 'matchId' in item ? (
+            <MessageRow
+              item={item}
+              isDeleting={deletingMatchId === item.matchId}
+              onPress={() =>
+                router.push({
+                  pathname: '/chat/[id]',
+                  params: {
+                    id: item.matchId,
+                    targetUid: item.targetUid,
+                    name: item.title,
+                    photoURL: item.photoURL || '',
+                  },
+                })
+              }
+              onDelete={() => handleDeletePress(item)}
+            />
+          ) : 'direction' in item ? (
+            <RequestRow
+              item={item}
+              isActing={requestActionId === item.id}
+              onAccept={() => {
+                void handleAcceptRequest(item);
+              }}
+              onDecline={() => {
+                void handleDeclineRequest(item);
+              }}
+            />
+          ) : null
+        }
+        contentContainerStyle={[
+          styles.listContent,
+          activeData.length === 0 && styles.emptyListContent,
+        ]}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ListEmptyComponent={<Text style={styles.emptyText}>{emptyCopy}</Text>}
+        showsVerticalScrollIndicator={false}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bgBase },
-  headerTitle: {
-    fontFamily: 'Inter', fontSize: 28, fontWeight: '800',
-    color: COLORS.textPrimary, marginHorizontal: 20, marginTop: 16, marginBottom: 16,
-  },
-  segmentContainer: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  segmentBtn: {
+  container: {
     flex: 1,
+    backgroundColor: COLORS.bgDeep,
+    paddingHorizontal: 18,
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    color: COLORS.textPrimary,
+    fontSize: 28,
+    fontWeight: '800',
+    marginTop: 8,
+    marginBottom: 18,
+  },
+  segmentedOuter: {
     flexDirection: 'row',
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 18,
+    padding: 6,
+    marginBottom: 18,
+  },
+  segmentButton: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
   },
-  segmentBtnActive: {
-    backgroundColor: 'rgba(255, 26, 92, 0.4)',
+  segmentButtonActive: {
+    backgroundColor: COLORS.roseSurface,
+  },
+  segmentContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   segmentText: {
     color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
   },
   segmentTextActive: {
     color: '#fff',
   },
-  listContent: { paddingHorizontal: 20, paddingBottom: 100 },
-  card: {
-    backgroundColor: COLORS.bgCard, borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: COLORS.borderLight,
+  listContent: {
+    paddingBottom: 120,
   },
-  cardRow: { flexDirection: 'row', alignItems: 'center' },
-  cardInfo: { flex: 1, marginLeft: 12 },
-  cardTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  cardSubtext: { color: COLORS.textSecondary, fontSize: 13 },
-  actionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16, gap: 12 },
-  btn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20 },
-  btnAccept: { backgroundColor: COLORS.rosePrimary },
-  btnText: { color: COLORS.textPrimary, fontWeight: '600', fontSize: 14 },
-  chatRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
-  avatarContainer: { position: 'relative' },
+  emptyListContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  row: {
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rowTapArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarWrap: {
+    position: 'relative',
+  },
   unreadBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: COLORS.rosePrimary,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
+    top: -4,
+    right: -4,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
-    paddingHorizontal: 4,
+    justifyContent: 'center',
+    backgroundColor: COLORS.badge,
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: COLORS.bgDeep,
   },
-  unreadText: {
+  unreadBadgeText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  rowContent: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    backgroundColor: COLORS.bgCard,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.8,
+  },
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rowTitle: {
+    flex: 1,
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+    marginRight: 12,
+  },
+  rowTime: {
+    color: COLORS.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  rowPreview: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    marginTop: 4,
+  },
+  requestMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  requestPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  requestPillIncoming: {
+    backgroundColor: COLORS.requestIncoming,
+  },
+  requestPillOutgoing: {
+    backgroundColor: COLORS.requestOutgoing,
+  },
+  requestPillText: {
+    color: COLORS.textPrimary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  requestSummary: {
+    flex: 1,
+    color: COLORS.rosePrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  requestActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+  },
+  requestActionButton: {
+    minWidth: 96,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  requestAcceptButton: {
+    backgroundColor: '#15803d',
+  },
+  requestDeclineButton: {
+    backgroundColor: '#7f1d1d',
+  },
+  requestActionDisabled: {
+    opacity: 0.8,
+  },
+  requestActionText: {
+    color: '#fff',
+    fontSize: 13,
     fontWeight: '700',
   },
-  chatContent: { flex: 1, marginLeft: 14 },
-  chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  chatName: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '700' },
-  chatNameUnread: { fontWeight: '800' },
-  chatTime: { color: COLORS.textSecondary, fontSize: 12 },
-  chatMessage: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
-  chatMessageUnread: { color: COLORS.textPrimary, fontWeight: '600' },
-  separator: { height: 1, backgroundColor: COLORS.borderLight, marginLeft: 70 },
+  separator: {
+    height: 1,
+    backgroundColor: COLORS.borderLight,
+    marginLeft: 72,
+  },
+  emptyText: {
+    color: COLORS.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
 });

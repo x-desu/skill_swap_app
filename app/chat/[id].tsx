@@ -1,235 +1,725 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
+  TouchableOpacity,
+  Text,
+  TextInput,
+  FlatList,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Text,
-  Alert,
-  FlatList,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { useSelector } from 'react-redux';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { GiftedChat, Bubble, Send, InputToolbar, Day, IMessage } from 'react-native-gifted-chat';
+import { useDispatch, useSelector } from 'react-redux';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { 
+  ChevronLeft, 
+  Send as SendIcon, 
+  Phone, 
+  Video, 
+  Smile, 
+  Image as ImageIcon,
+  MoreVertical,
+  X
+} from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 import type { RootState } from '../../src/store';
-import { useChat } from '../../src/hooks/useChat';
-import { useSendMessage } from '../../src/hooks/useSendMessage';
-import { useTyping } from '../../src/hooks/useTyping';
-import { markMatchAsRead } from '../../src/services/chatService';
-import { getUserProfile } from '../../src/services/firestoreService';
-import { getMatchById } from '../../src/services/matchingService';
+import { setRoomMessages } from '../../src/store/chatSlice';
+import { sendMessage, listenToMessages, sendImageMessage } from '../../src/services/chatService';
+import { markNotificationsForMatchAsRead } from '../../src/services/notificationService';
 import type { MessageDocument } from '../../src/types/user';
+import UserAvatar from '../../src/components/UserAvatar';
+import { useUserPresence, formatLastActive } from '../../src/hooks/useUserPresence';
+import { createVideoCallInvite } from '../../src/services/videoCallService';
 
-import { ChatHeader } from '../../src/components/ChatHeader';
-import { ChatBubble } from '../../src/components/ChatBubble';
-import { ChatInput } from '../../src/components/ChatInput';
-import { ChatSkeleton } from '../../src/components/ChatSkeleton';
+const COLORS = {
+  rosePrimary: '#ff1a5c',
+  roseLight: '#ff4d80',
+  bgDark: '#130303',
+  bgBase: '#0a0202',
+  bgCard: '#1c0808',
+  bubbleRight: '#ff1a5c',
+  bubbleRightAlt: '#d4144e',
+  bubbleLeft: '#1e1e1e',
+  textPrimary: '#ffffff',
+  textSecondary: 'rgba(255,255,255,0.55)',
+  borderLight: 'rgba(255,255,255,0.08)',
+  inputBg: '#1a0a0a',
+  online: '#22c55e',
+};
+
+// ── Memoised selector — avoids "returned a different reference" warning ──
+// The fallback [] is defined once outside, so referential equality is preserved
+const EMOJIS = [
+  '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇',
+  '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚',
+  '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸',
+  '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️',
+  '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡',
+  '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓',
+  '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄',
+  '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵',
+  '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠',
+  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
+  '👍', '👎', '👏', '🙌', '👐', '🤝', '✌️', '🤞', '🤟', '🤘',
+  '👌', '🤌', '🤏', '✋', '🖐️', '👋', '💪', '🙏', '✨', '🔥',
+];
+const EMPTY_MESSAGES: MessageDocument[] = [];
+function selectRoomMessages(roomId: string) {
+  return (state: RootState) => state.chat.rooms[roomId] ?? EMPTY_MESSAGES;
+}
 
 export default function ChatRoomScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
+  const dispatch = useDispatch();
   const authUser = useSelector((state: RootState) => state.auth.user);
-  const flatListRef = useRef<FlatList<MessageDocument>>(null);
 
   const matchId = params.id as string;
-  const routeTargetUid = params.targetUid as string | undefined;
-  const routeTargetName = (params.name as string) || '';
-  const routeTargetPhoto = (params.photoURL as string) || '';
-  const [resolvedTargetUid, setResolvedTargetUid] = useState<string>(routeTargetUid || '');
-  const [resolvedTargetName, setResolvedTargetName] = useState<string>(routeTargetName);
-  const [resolvedTargetPhoto, setResolvedTargetPhoto] = useState<string>(routeTargetPhoto);
+  const targetUid = params.targetUid as string;
 
-  const {
-    messages,
-    loading,
-    addOptimisticMessage,
-  } = useChat(matchId, authUser?.uid);
+  const targetName =
+    (params.name as string) ||
+    (params.targetName as string) ||
+    (params.senderName as string) ||
+    'SkillSwap User';
+  const targetPhoto =
+    (params.photoURL as string) ||
+    (params.targetPhoto as string) ||
+    (params.targetPhotoURL as string) ||
+    (params.senderPhotoURL as string) ||
+    '';
 
-  const { send } = useSendMessage(matchId, resolvedTargetUid, addOptimisticMessage);
-  const { onTextInput, otherUserTyping } = useTyping(matchId, authUser?.uid || '', resolvedTargetUid);
+  // Stable selector reference – no new [] created on every render
+  const roomSelector = useMemo(() => selectRoomMessages(matchId), [matchId]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [inputText, setInputText] = useState('');
+  const [isStartingVideoCall, setIsStartingVideoCall] = useState(false);
+  const giftedChatRef = useRef<any>(null);
+  const storedMessages = useSelector(roomSelector);
+  const [messages, setMessages] = useState<MessageDocument[]>(storedMessages);
 
-  const headerName = useMemo(() => resolvedTargetName || routeTargetName || 'Match', [resolvedTargetName, routeTargetName]);
-  const headerPhoto = useMemo(() => resolvedTargetPhoto || routeTargetPhoto || '', [resolvedTargetPhoto, routeTargetPhoto]);
+  // ── Real-time Listener ──
+  useEffect(() => {
+    if (!matchId) return;
+    const unsubscribe = listenToMessages(matchId, (newMessages) => {
+      setMessages(newMessages);
+      dispatch(setRoomMessages({ roomId: matchId, messages: newMessages }));
+    });
+    return () => unsubscribe();
+  }, [matchId, dispatch]);
 
   useEffect(() => {
-    if (messages.length > 0) {
-      // Inverted list: newest is at index 0. Scroll to start.
-      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-    }
-  }, [messages.length]);
+    if (!authUser?.uid || !matchId) return;
+    void markNotificationsForMatchAsRead(authUser.uid, matchId);
+  }, [authUser?.uid, matchId]);
 
-  useEffect(() => {
-    // Basic validation to prevent firestore-not-found errors if matchId is invalid
-    if (matchId && matchId !== 'undefined' && matchId !== 'null' && authUser?.uid) {
-      markMatchAsRead(matchId, authUser.uid).catch(err => {
-        console.warn('[ChatRoom] Failed to mark match as read:', err.message);
-      });
-    }
-  }, [matchId, authUser?.uid]);
+  const onSend = useCallback(
+    async (newMessages: IMessage[] = []) => {
+      if (!matchId || !authUser) return;
+      const messageToSave = newMessages[0];
+      if (!messageToSave) return;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const resolveTargetProfile = async () => {
-      if (!matchId || !authUser?.uid) {
-        return;
-      }
-
-      let targetUid = routeTargetUid || '';
-
-      if (!targetUid) {
-        try {
-          const match = await getMatchById(matchId);
-          targetUid = match?.users?.find((uid) => uid !== authUser.uid) || '';
-        } catch (error) {
-          console.warn('[ChatRoom] Failed to resolve match participants:', error);
-        }
-      }
-
-      if (!targetUid || cancelled) {
-        return;
-      }
-
-      setResolvedTargetUid(targetUid);
+      // Optimistic UI update
+      setMessages((prev) =>
+        GiftedChat.append(prev as any, newMessages as any) as MessageDocument[]
+      );
+      setInputText('');
 
       try {
-        const profile = await getUserProfile(targetUid);
-
-        if (cancelled) {
-          return;
-        }
-
-        setResolvedTargetName(profile?.displayName || routeTargetName || 'Match');
-        setResolvedTargetPhoto(profile?.photoURL || routeTargetPhoto || '');
-      } catch (error) {
-        if (!cancelled) {
-          console.warn('[ChatRoom] Failed to fetch target profile:', error);
-          setResolvedTargetName((current) => current || routeTargetName || 'Match');
-          setResolvedTargetPhoto((current) => current || routeTargetPhoto || '');
-        }
+        await sendMessage(matchId, {
+          ...(messageToSave as any),
+          user: {
+            _id: authUser.uid,
+            name: authUser.displayName || 'Me',
+            avatar: authUser.photoURL || undefined,
+          },
+        });
+      } catch (err) {
+        console.error('Failed to send message:', err);
       }
-    };
-
-    resolveTargetProfile();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authUser?.uid, matchId, routeTargetName, routeTargetPhoto, routeTargetUid]);
-
-  const handleSend = useCallback(
-    (text: string) => {
-      if (!authUser) return;
-      send(
-        text,
-        authUser.uid,
-        authUser.displayName || 'Me',
-        authUser.photoURL || undefined
-      );
     },
-    [authUser, send]
+    [matchId, authUser]
   );
 
-  const handleImagePress = useCallback(async () => {
+  const handlePickImage = async () => {
     try {
-      const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permResult.granted) {
-        Alert.alert('Permission Needed', 'Please allow access to your photo library.');
-        return;
-      }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.7,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
       });
-      if (!result.canceled && result.assets?.[0]) {
-        Alert.alert('📷 Image Selected', 'Image sharing coming soon!');
+
+      if (!result.canceled && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        
+        // Send image message
+        const imageMessage: any = {
+          _id: Math.random().toString(36).substring(7),
+          createdAt: new Date(),
+          user: {
+            _id: authUser?.uid || '',
+            name: authUser?.displayName || 'Me',
+            avatar: authUser?.photoURL || undefined,
+          },
+          image: imageUri,
+        };
+
+        setMessages((prev) => GiftedChat.append(prev as any, [imageMessage]) as MessageDocument[]);
+
+        try {
+          await sendImageMessage(matchId, imageUri, {
+            _id: authUser?.uid || '',
+            name: authUser?.displayName || 'Me',
+            avatar: authUser?.photoURL || undefined,
+          });
+        } catch (err) {
+          console.error('Failed to send image:', err);
+          Alert.alert('Error', 'Failed to send image');
+        }
       }
-    } catch {
-      Alert.alert('Error', 'Failed to open image picker.');
+    } catch (err) {
+      console.error('Image picker error:', err);
     }
-  }, []);
+  };
 
-  const handleViewProfile = useCallback(() => {
-    Alert.alert(headerName, 'Profile view coming soon!');
-  }, [headerName]);
+  const handleEmojiSelect = (emoji: string) => {
+    setInputText((prev) => prev + emoji);
+  };
 
-  const renderItem = ({ item }: { item: MessageDocument }) => (
-    <ChatBubble
-      message={item}
-      isMyMessage={item.user._id === authUser?.uid}
+  const handleCallPress = () => {
+    Alert.alert('Voice Call', `Calling ${targetName} is coming soon!`);
+  };
+
+  const handleVideoPress = () => {
+    if (!matchId || !targetUid) {
+      Alert.alert('Video Call', 'This chat is missing the match details needed to start a call.');
+      return;
+    }
+
+    if (isStartingVideoCall) {
+      return;
+    }
+
+    const startVideoCall = async () => {
+      try {
+        setIsStartingVideoCall(true);
+        const result = await createVideoCallInvite({
+          matchId,
+          calleeUid: targetUid,
+        });
+
+        router.push({
+          pathname: '/call/[id]',
+          params: { id: result.callId },
+        });
+      } catch (error: any) {
+        console.error('[Chat] Failed to start video call:', error);
+        Alert.alert(
+          'Unable to start call',
+          error?.message || `Couldn’t start a video call with ${targetName}.`,
+        );
+      } finally {
+        setIsStartingVideoCall(false);
+      }
+    };
+
+    void startVideoCall();
+  };
+
+  const handleMorePress = () => {
+    Alert.alert(
+      targetName,
+      'Choose an action',
+      [
+        { text: 'View Profile', onPress: () => console.log('View profile') },
+        { text: 'Mute Notifications', onPress: () => Alert.alert('Muted', 'Notifications muted') },
+        { text: 'Block User', style: 'destructive', onPress: () => Alert.alert('Blocked', `${targetName} has been blocked`) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  // ── Render Helpers ──
+
+  const renderBubble = (props: any) => (
+    <Bubble
+      {...props}
+      wrapperStyle={{
+        right: styles.bubbleRight,
+        left: styles.bubbleLeft,
+      }}
+      textStyle={{
+        right: styles.bubbleTextRight,
+        left: styles.bubbleTextLeft,
+      }}
+      timeTextStyle={{
+        right: styles.timeTextRight,
+        left: styles.timeTextLeft,
+      }}
+      containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
     />
+  );
+
+  // ── Manual send handler (bypasses GiftedChat send flow) ──
+  const handleManualSend = useCallback(() => {
+    const text = inputText.trim();
+    if (!text || !authUser) return;
+    const msg: IMessage = {
+      _id: Math.random().toString(36).slice(2),
+      text,
+      createdAt: new Date(),
+      user: {
+        _id: authUser.uid,
+        name: authUser.displayName || 'Me',
+        avatar: authUser.photoURL || undefined,
+      },
+    };
+    onSend([msg]);
+  }, [inputText, authUser, onSend]);
+
+  const renderDay = (props: any) => (
+    <Day
+      {...props}
+      textStyle={styles.dayText}
+      wrapperStyle={styles.dayWrapper}
+    />
+  );
+
+  // Real-time presence
+  const { isOnline, lastActive } = useUserPresence(targetUid);
+
+  // ── Header ──
+  const renderHeader = () => (
+    <View style={[styles.header, { paddingTop: Math.max(insets.top, 14) }]}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.7}>
+        <ChevronLeft color={COLORS.textPrimary} size={26} strokeWidth={2.5} />
+      </TouchableOpacity>
+
+      <View style={styles.headerCenter}>
+        <View style={styles.avatarWrap}>
+          <UserAvatar
+            uid={targetUid}
+            displayName={targetName}
+            photoURL={targetPhoto}
+            size={38}
+          />
+          {isOnline && <View style={styles.onlineDot} />}
+        </View>
+        <View>
+          <Text style={styles.headerName}>{targetName}</Text>
+          <Text style={[styles.onlineText, !isOnline && styles.offlineText]}>
+            {isOnline ? 'Active now' : formatLastActive(lastActive)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.headerActions}>
+        <TouchableOpacity onPress={handleCallPress} style={styles.headerActionBtn}>
+          <Phone color="#fff" size={20} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleVideoPress}
+          style={[styles.headerActionBtn, isStartingVideoCall && styles.headerActionBtnDisabled]}
+          disabled={isStartingVideoCall}
+        >
+          <Video color={isStartingVideoCall ? 'rgba(255,255,255,0.45)' : '#fff'} size={22} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleMorePress} style={styles.headerActionBtn}>
+          <MoreVertical color="#fff" size={22} />
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   if (!authUser) return null;
 
   return (
-    <View style={styles.root}>
-      <ChatHeader
-        name={headerName}
-        avatar={headerPhoto}
-        isOnline={false}
-        onViewProfile={handleViewProfile}
-      />
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      {renderHeader()}
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
-        {loading && messages.length === 0 ? (
-          <ChatSkeleton />
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderItem}
-            keyExtractor={(item) => item._id}
-            inverted
-            contentContainerStyle={styles.listContent}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            style={styles.flex}
-          />
-        )}
-
-        {otherUserTyping && (
-          <Animated.View entering={FadeIn} style={styles.typingIndicator}>
-            <Text style={styles.typingText}>{headerName} is typing...</Text>
-          </Animated.View>
-        )}
-
-        <ChatInput
-          onSend={handleSend}
-          onType={onTextInput}
-          onImagePress={handleImagePress}
+      {/* Message list — GiftedChat with its toolbar disabled */}
+      <View style={styles.chatContainer}>
+        <GiftedChat
+          messages={messages as any}
+          onSend={(msgs) => onSend(msgs as IMessage[])}
+          user={{
+            _id: authUser.uid,
+            name: authUser.displayName || 'Me',
+            avatar: authUser.photoURL || undefined,
+          }}
+          renderBubble={renderBubble}
+          renderDay={renderDay}
+          renderAvatar={null}
+          renderInputToolbar={() => <View />}
+          messagesContainerStyle={styles.messagesContainer}
+          {...({
+            scrollToBottom: true,
+            scrollToBottomStyle: styles.scrollToBottom,
+            scrollToBottomComponent: () => (
+              <View style={styles.scrollToBottomInner}>
+                <Text style={{ color: '#fff', fontSize: 16 }}>↓</Text>
+              </View>
+            ),
+          } as any)}
         />
-      </KeyboardAvoidingView>
-    </View>
+      </View>
+
+      {/* ── Emoji picker ── */}
+      {showEmojiPicker && (
+        <View style={styles.emojiPicker}>
+          <View style={styles.emojiPickerHeader}>
+            <Text style={styles.emojiPickerTitle}>😊 Emojis</Text>
+            <TouchableOpacity onPress={() => setShowEmojiPicker(false)} style={styles.emojiClose}>
+              <X color="#fff" size={18} />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={EMOJIS}
+            numColumns={8}
+            keyExtractor={(item) => item}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item }) => (
+              <TouchableOpacity onPress={() => handleEmojiSelect(item)} style={styles.emojiItem}>
+                <Text style={styles.emojiText}>{item}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      )}
+
+      {/* ── Custom input bar (fully ours — no GiftedChat involvement) ── */}
+      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        {/* Left actions */}
+        <TouchableOpacity
+          onPress={() => setShowEmojiPicker((v) => !v)}
+          style={[styles.inputIconBtn, showEmojiPicker && styles.inputIconBtnActive]}
+          activeOpacity={0.7}
+        >
+          <Smile color={showEmojiPicker ? COLORS.rosePrimary : 'rgba(255,255,255,0.7)'} size={22} />
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={handlePickImage} style={styles.inputIconBtn} activeOpacity={0.7}>
+          <ImageIcon color="rgba(255,255,255,0.7)" size={22} />
+        </TouchableOpacity>
+
+        {/* Text input */}
+        <TextInput
+          style={styles.customTextInput}
+          value={inputText}
+          onChangeText={setInputText}
+          placeholder="Message..."
+          placeholderTextColor={COLORS.textSecondary}
+          multiline
+          maxLength={2000}
+          returnKeyType="default"
+          blurOnSubmit={false}
+        />
+
+        {/* Send button — always visible */}
+        <TouchableOpacity
+          onPress={handleManualSend}
+          style={[
+            styles.sendBtn,
+            !inputText.trim() && styles.sendBtnDisabled,
+          ]}
+          activeOpacity={0.8}
+          disabled={!inputText.trim()}
+        >
+          <SendIcon color="#fff" size={18} strokeWidth={2.5} />
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
+  container: {
     flex: 1,
-    backgroundColor: '#0d0202',
+    backgroundColor: COLORS.bgBase,
   },
-  flex: {
-    flex: 1,
+
+  // ── Header ──
+  header: {
+    backgroundColor: COLORS.bgDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  listContent: {
-    paddingHorizontal: 8,
-    paddingTop: 8,
-    paddingBottom: 8,
-  },
-  typingIndicator: {
-    paddingHorizontal: 16,
+  backButton: {
+    paddingHorizontal: 14,
     paddingVertical: 4,
   },
-  typingText: {
-    color: 'rgba(255, 255, 255, 0.5)',
+  headerCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingRight: 12,
+  },
+  headerActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  headerActionBtnDisabled: {
+    opacity: 0.7,
+  },
+  avatarWrap: {
+    position: 'relative',
+  },
+  onlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: COLORS.online,
+    borderWidth: 2,
+    borderColor: COLORS.bgDark,
+  },
+  headerName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  offlineText: {
+    color: '#888',
+  },
+  onlineText: {
+    color: COLORS.online,
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+
+  // ── Input Actions ──
+  inputActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingLeft: 12,
+  },
+  inputButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // ── Input button active state ──
+  inputButtonActive: {
+    backgroundColor: 'rgba(255,26,92,0.2)',
+  },
+
+  // ── Emoji Picker ──
+  // Fixed height so it never takes over the whole screen.
+  // Rendered at the screen level (outside GiftedChat) so it doesn't
+  // break GiftedChat's internal layout measurement.
+  emojiPicker: {
+    height: 260,
+    backgroundColor: COLORS.bgCard,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  emojiPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  emojiPickerTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emojiClose: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiItem: {
+    flex: 1,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    maxWidth: 44,
+  },
+  emojiText: {
+    fontSize: 26,
+  },
+
+  // ── Chat Area ──
+  chatContainer: {
+    flex: 1,
+    backgroundColor: COLORS.bgBase,
+  },
+  messagesContainer: {
+    backgroundColor: COLORS.bgBase,
+    paddingBottom: 4,
+  },
+
+  // ── Bubbles ──
+  bubbleRight: {
+    backgroundColor: COLORS.bubbleRight,
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    marginBottom: 2,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    shadowColor: COLORS.rosePrimary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
+  bubbleLeft: {
+    backgroundColor: COLORS.bubbleLeft,
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    marginBottom: 2,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+  },
+  bubbleTextRight: {
+    color: '#fff',
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  bubbleTextLeft: {
+    color: '#f0f0f0',
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  timeTextRight: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 10,
+  },
+  timeTextLeft: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 10,
+  },
+
+  // ── Day separator ──
+  dayWrapper: {
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  dayText: {
+    color: COLORS.textSecondary,
     fontSize: 12,
-    fontStyle: 'italic',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+
+  // ── Custom input bar ──
+  inputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+    paddingTop: 10,
+    paddingHorizontal: 10,
+    gap: 6,
+  },
+  inputIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputIconBtnActive: {
+    backgroundColor: 'rgba(255,26,92,0.15)',
+  },
+  customTextInput: {
+    flex: 1,
+    color: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    fontSize: 15,
+    minHeight: 42,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sendBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.rosePrimary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.rosePrimary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  sendBtnDisabled: {
+    backgroundColor: 'rgba(255,26,92,0.35)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+
+  // ── Scroll to bottom ──
+  scrollToBottom: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    right: 16,
+    bottom: 16,
+    width: 40,
+    height: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  scrollToBottomInner: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

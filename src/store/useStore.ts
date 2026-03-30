@@ -1,33 +1,6 @@
-/**
- * ⚠️ DEMO-ONLY STORE - NOT FOR PRODUCTION USE ⚠️
- * 
- * This Zustand store is deprecated per SRS section 8.2 and 18.
- * It contains mock data and local state management that violates the
- * canonical architecture (Firestore as single source of truth).
- * 
- * Use Firestore-backed hooks for production domain data:
- * - useDiscoveryFeed() for user discovery
- * - useMatches() for matches
- * - useChat() for messages
- * - Redux authSlice for auth state
- * 
- * This file is kept only for isolated demo/testing scenarios.
- */
-
 import { create } from 'zustand';
 import { User, Match, Message, Transaction } from '../types';
 
-/**
- * @deprecated DEMO-ONLY: Use Redux authSlice for auth state + Firestore hooks for domain data.
- * See SRS sections 8.2, 18 for migration requirements.
- * 
- * Example migration:
- * - Instead of: useStore(state => state.users)
- * - Use: useDiscoveryFeed(authUser?.uid)
- * 
- * - Instead of: useStore(state => state.matches)
- * - Use: useMatches(authUser?.uid)
- */
 interface AppState {
     currentUser: User;
     users: User[]; // Potential matches
@@ -121,11 +94,6 @@ const INITIAL_USER: User = {
     skillsNeeded: ['Photography', 'Interior Design']
 };
 
-/**
- * @deprecated DEMO-ONLY: This Zustand store is deprecated per SRS 8.2, 18.
- * Use Firestore-backed hooks or Redux for production state management.
- * Kept only for isolated demo/testing scenarios.
- */
 export const useStore = create<AppState>((set, get) => ({
     currentUser: INITIAL_USER,
     users: MOCK_USERS,

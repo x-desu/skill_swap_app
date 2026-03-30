@@ -6,7 +6,7 @@ import { calculateDistance } from '../utils/location';
 
 const FILTERS_STORAGE_KEY = '@skillswap/discover_filters';
 
-export function useDiscoverFilters(currentUser: UserDocument | null) {
+export function useDiscoverFilters() {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -47,38 +47,29 @@ export function useDiscoverFilters(currentUser: UserDocument | null) {
     updateFilters({ [key]: value });
   }, [updateFilters]);
 
-  // Apply filters to an array of users
-  const applyFilters = useCallback((users: UserDocument[]) => {
+  /**
+   * Apply filters to a list of users.
+   * NOTE: currentUser is passed as an argument (not captured in closure) so that
+   * `applyFilters` stays stable (same function reference) even when the profile
+   * Redux object reference changes on profile listener updates.
+   */
+  const applyFilters = useCallback((users: UserDocument[], currentUser: UserDocument | null) => {
     if (!currentUser) return users;
 
     let result = [...users];
 
+
     // 1. Distance Filter
-    if (filters.maxDistance > 0 && filters.maxDistance < 100) {
-      result = result.filter(user => {
-        // If either user is missing coordinates, filter them out in production strict mode.
-        if (!user.location?.lat || !user.location?.lng || !currentUser.location?.lat || !currentUser.location?.lng) {
-          return false; 
-        }
-        
-        const dist = calculateDistance(
-          currentUser.location.lat,
-          currentUser.location.lng,
-          user.location.lat,
-          user.location.lng
-        );
-        
-        return dist !== null && dist <= filters.maxDistance;
-      });
-    }
+    // NOTE: UserDocument.location only has city/country — no coordinates yet.
+    // Distance filtering is skipped until lat/lng coordinates are added to the schema.
+    // if (filters.maxDistance > 0 && filters.maxDistance < 100) { ... }
 
     // 2. Category Filter
     if (filters.category !== 'All') {
       const targetSkills = CATEGORY_SKILLS_MAP[filters.category];
       result = result.filter(user => {
-        // Match if the user's teachSkills overlap with the category's mapped skills
         const lowerTeach = user.teachSkills?.map(s => s.toLowerCase()) || [];
-        return targetSkills.some(catSkill => 
+        return targetSkills.some(catSkill =>
           lowerTeach.some(skill => skill.includes(catSkill))
         );
       });
@@ -88,15 +79,11 @@ export function useDiscoverFilters(currentUser: UserDocument | null) {
     if (filters.matchMySkills) {
       const myWants = currentUser.wantSkills?.map(s => s.toLowerCase()) || [];
       const myTeaches = currentUser.teachSkills?.map(s => s.toLowerCase()) || [];
-      
       result = result.filter(user => {
         const theirTeaches = user.teachSkills?.map(s => s.toLowerCase()) || [];
         const theirWants = user.wantSkills?.map(s => s.toLowerCase()) || [];
-        
-        // Exact overlap check
         const theyTeachWhatIWant = myWants.some(w => theirTeaches.some(t => t.includes(w) || w.includes(t)));
         const theyWantWhatITeach = myTeaches.some(t => theirWants.some(w => w.includes(t) || t.includes(w)));
-        
         return theyTeachWhatIWant || theyWantWhatITeach;
       });
     }
@@ -118,19 +105,18 @@ export function useDiscoverFilters(currentUser: UserDocument | null) {
 
     // 7. Search Query
     if (filters.searchQuery.trim().length > 0) {
-      const query = filters.searchQuery.toLowerCase().trim();
+      const q = filters.searchQuery.toLowerCase().trim();
       result = result.filter(user => {
-        const matchName = user.displayName?.toLowerCase().includes(query);
-        const matchBio = user.bio?.toLowerCase().includes(query);
-        const matchTeach = user.teachSkills?.some(s => s.toLowerCase().includes(query));
-        const matchWant = user.wantSkills?.some(s => s.toLowerCase().includes(query));
-        
+        const matchName = user.displayName?.toLowerCase().includes(q);
+        const matchBio = user.bio?.toLowerCase().includes(q);
+        const matchTeach = user.teachSkills?.some(s => s.toLowerCase().includes(q));
+        const matchWant = user.wantSkills?.some(s => s.toLowerCase().includes(q));
         return matchName || matchBio || matchTeach || matchWant;
       });
     }
 
     return result;
-  }, [filters, currentUser]);
+  }, [filters]); // ← Only depends on filters, NOT currentUser object reference
 
   return {
     filters,
@@ -138,6 +124,6 @@ export function useDiscoverFilters(currentUser: UserDocument | null) {
     setFilter,
     updateFilters,
     resetFilters,
-    applyFilters
+    applyFilters,
   };
 }

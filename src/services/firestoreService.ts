@@ -11,30 +11,32 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
   setDoc,
   updateDoc,
-  addDoc,
-  deleteDoc,
   onSnapshot,
   query,
   where,
   orderBy,
   limit,
+  getDocs,
+  addDoc,
   serverTimestamp,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  deleteDoc,
 } from '@react-native-firebase/firestore';
 import {
   UserDocument,
   UserProfileInput,
+  SwapRequest,
+  SwapStatus,
 } from '../types/user';
-import type { CreditLedgerEntry } from '../types/credits';
 
 // ─── Collection references ────────────────────────────────────────────────────
 
 const db = () => getFirestore();
 const usersCol = () => collection(db(), 'users');
+const swapsCol = () => collection(db(), 'swapRequests');
 
 // ─── User Profile ─────────────────────────────────────────────────────────────
 
@@ -52,11 +54,17 @@ export const upsertUserProfile = async (
   const snap = await getDoc(ref);
 
   if (snap.data() !== undefined) {
-    // Document exists — only update the specific fields provided
-    await updateDoc(ref, {
-      ...data,
-      updatedAt: serverTimestamp(),
-    });
+    // Document exists — only update the specific fields provided, 
+    // but filter out empty/null values to avoid wiping out a completed profile.
+    const updateData: any = { updatedAt: serverTimestamp() };
+    if (data.email) updateData.email = data.email;
+    if (data.displayName) updateData.displayName = data.displayName;
+    if (data.photoURL) {
+      updateData.photoURL = data.photoURL;
+      updateData.hasPhoto = true;
+    }
+    
+    await updateDoc(ref, updateData);
   } else {
     // New document — inject all required default values
     await setDoc(ref, {
@@ -70,6 +78,7 @@ export const upsertUserProfile = async (
       rating: 0,
       reviewCount: 0,
       completedSwaps: 0,
+      credits: 10,
       isProfileComplete: false,
       hasPhoto: false,
       ...data, // Caller-supplied data wins
@@ -96,17 +105,13 @@ export const listenToUserProfile = (
   uid: string,
   callback: (user: UserDocument | null) => void,
 ): (() => void) =>
-  onSnapshot(
-    doc(usersCol(), uid),
-    (snap) => {
+  onSnapshot(doc(usersCol(), uid), (snap) => {
       if (!snap.exists) {
         callback(null);
         return;
       }
       callback({ ...(snap.data() as UserDocument), uid: snap.id });
-    },
-    console.error
-  );
+    }, console.error);
 
 /**
  * Real-time listener for the home-screen user discovery feed.
@@ -117,34 +122,30 @@ export const listenToNearbyUsers = (
   callback: (users: UserDocument[]) => void,
   categoryKeywords?: string[],
 ): (() => void) => {
-  let q = query(
+  let usersQuery = query(
     usersCol(),
     where('isProfileComplete', '==', true),
     orderBy('rating', 'desc'),
-    limit(30)
+    limit(30),
   );
 
   // If category keywords provided, filter by teachSkills array-contains-any
   if (categoryKeywords && categoryKeywords.length > 0) {
-    q = query(
+    usersQuery = query(
       usersCol(),
       where('isProfileComplete', '==', true),
       where('teachSkills', 'array-contains-any', categoryKeywords.slice(0, 10)),
       orderBy('rating', 'desc'),
-      limit(30)
+      limit(30),
     );
   }
 
-  return onSnapshot(
-    q,
-    (snap) => {
-      const users = snap.docs
-        .map((d: any) => ({ ...(d.data() as UserDocument), uid: d.id }))
-        .filter((u: any) => u.uid !== currentUid);
-      callback(users);
-    },
-    console.error
-  );
+  return onSnapshot(usersQuery, (snap) => {
+    const users = snap.docs
+      .map((userDoc: any) => ({ ...(userDoc.data() as UserDocument), uid: userDoc.id }))
+      .filter((user: UserDocument) => user.uid !== currentUid);
+    callback(users);
+  }, console.error);
 };
 
 // ─── Skills CRUD ──────────────────────────────────────────────────────────────
@@ -206,48 +207,97 @@ export const removeWantSkill = (uid: string, skill: string): Promise<void> =>
  * Returns up to 20 results.
  */
 export const searchUsersBySkill = async (skill: string): Promise<UserDocument[]> => {
-  const snap = await getDocs(
-    query(
-      usersCol(),
-      where('isProfileComplete', '==', true),
-      where('teachSkills', 'array-contains', skill),
-      limit(20)
-    )
+  const usersQuery = query(
+    usersCol(),
+    where('isProfileComplete', '==', true),
+    where('teachSkills', 'array-contains', skill),
+    limit(20),
   );
-  return snap.docs.map((d: any) => ({ ...(d.data() as UserDocument), uid: d.id }));
+  const snap = await getDocs(usersQuery);
+  return snap.docs.map((userDoc: any) => ({ ...(userDoc.data() as UserDocument), uid: userDoc.id }));
 };
 
-// ─── Swap Requests (DEPRECATED per SRS 18) ────────────────────────────────────
-// The swapRequests collection and related functions are deprecated.
-// Use `likes` + `matches` collections instead.
-// See: createSwapRequest → likeUser(), listenToMySwapRequests → useLikes()
-
-const creditLedgerCol = () => collection(db(), 'creditLedger');
+// ─── Swap Requests ────────────────────────────────────────────────────────────
 
 /**
- * Real-time listener for the signed-in user's credit ledger (newest first).
+ * Create a new swap request with denormalised sender display data.
+ * status is always 'pending' on creation.
  */
-export const listenToCreditLedger = (
-  uid: string,
-  callback: (entries: CreditLedgerEntry[]) => void,
-  maxEntries: number = 50,
-): (() => void) => {
-  const q = query(
-    creditLedgerCol(),
-    where('userId', '==', uid),
-    orderBy('createdAt', 'desc'),
-    limit(maxEntries),
-  );
-  return onSnapshot(
-    q,
-    (snap) => {
-      const entries = snap.docs.map((d: { id: string; data: () => Omit<CreditLedgerEntry, 'id'> }) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-      callback(entries);
-    },
-    console.error,
-  );
+export const createSwapRequest = async (
+  data: Omit<SwapRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>,
+): Promise<void> => {
+  await addDoc(swapsCol(), {
+    ...data,
+    status: 'pending' as SwapStatus,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 };
 
+
+/**
+ * Real-time listener for all swap requests involving the current user.
+ * Returns both incoming (as toUid) and outgoing (as fromUid) documents.
+ */
+export const listenToMySwapRequests = (
+  uid: string,
+  callback: (incoming: SwapRequest[], outgoing: SwapRequest[]) => void,
+): (() => void) => {
+  let incoming: SwapRequest[] = [];
+  let outgoing: SwapRequest[] = [];
+  let resolved = [false, false];
+
+  const notify = () => {
+    if (resolved[0] && resolved[1]) callback(incoming, outgoing);
+  };
+
+  const incomingQuery = query(
+    swapsCol(),
+    where('toUid', '==', uid),
+    orderBy('createdAt', 'desc'),
+    limit(50),
+  );
+  const unsubIncoming = onSnapshot(incomingQuery, (snap) => {
+      incoming = snap.docs.map((requestDoc: any) => ({
+        ...(requestDoc.data() as SwapRequest),
+        id: requestDoc.id,
+      }));
+      resolved[0] = true;
+      notify();
+    }, console.error);
+
+  const outgoingQuery = query(
+    swapsCol(),
+    where('fromUid', '==', uid),
+    orderBy('createdAt', 'desc'),
+    limit(50),
+  );
+  const unsubOutgoing = onSnapshot(outgoingQuery, (snap) => {
+      outgoing = snap.docs.map((requestDoc: any) => ({
+        ...(requestDoc.data() as SwapRequest),
+        id: requestDoc.id,
+      }));
+      resolved[1] = true;
+      notify();
+    }, console.error);
+
+  return () => {
+    unsubIncoming();
+    unsubOutgoing();
+  };
+};
+
+/**
+ * Update a swap request's status (accept, decline, complete).
+ */
+export const updateSwapStatus = (id: string, status: SwapStatus): Promise<void> =>
+  updateDoc(doc(swapsCol(), id), {
+    status,
+    updatedAt: serverTimestamp(),
+  });
+
+/**
+ * Delete a pending swap request (only the sender should be able to do this).
+ */
+export const deleteSwapRequest = (id: string): Promise<void> =>
+  deleteDoc(doc(swapsCol(), id));

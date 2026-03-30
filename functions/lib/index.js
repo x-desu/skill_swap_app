@@ -39,7 +39,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.spendCredits = exports.seedNewUserCredits = exports.revenueCatWebhook = exports.onMatchCreated = exports.onMessageCreated = exports.onLikeCreated = void 0;
+exports.grantAllUsersPlusTenCredits = exports.declineRequest = exports.acceptRequest = exports.deleteChatThread = exports.getStreamVideoToken = exports.endVideoCall = exports.declineVideoCallInvite = exports.createVideoCallInvite = exports.acceptVideoCallInvite = exports.spendCredits = exports.seedNewUserCredits = exports.revenueCatWebhook = exports.onMatchCreated = exports.onMessageCreated = exports.onLikeCreated = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const admin = __importStar(require("firebase-admin"));
 const node_fetch_1 = __importDefault(require("node-fetch"));
@@ -55,8 +55,7 @@ exports.onLikeCreated = (0, firestore_1.onDocumentCreated)({
     document: 'likes/{likeId}',
     region: 'asia-south1'
 }, async (event) => {
-    var _a, _b, _c, _d, _e, _f;
-    const likeData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
+    const likeData = event.data?.data();
     if (!likeData)
         return;
     const { fromUid, toUid, type } = likeData;
@@ -104,10 +103,10 @@ exports.onLikeCreated = (0, firestore_1.onDocumentCreated)({
                 db.collection('users').doc(fromUid).get(),
                 db.collection('users').doc(toUid).get()
             ]);
-            const fromUserName = ((_b = fromUserDoc.data()) === null || _b === void 0 ? void 0 : _b.displayName) || 'Someone';
-            const fromUserPhotoURL = ((_c = fromUserDoc.data()) === null || _c === void 0 ? void 0 : _c.photoURL) || '';
-            const toUserName = ((_d = toUserDoc.data()) === null || _d === void 0 ? void 0 : _d.displayName) || 'Someone';
-            const toUserPhotoURL = ((_e = toUserDoc.data()) === null || _e === void 0 ? void 0 : _e.photoURL) || '';
+            const fromUserName = fromUserDoc.data()?.displayName || 'Someone';
+            const fromUserPhotoURL = fromUserDoc.data()?.photoURL || '';
+            const toUserName = toUserDoc.data()?.displayName || 'Someone';
+            const toUserPhotoURL = toUserDoc.data()?.photoURL || '';
             // Send notifications to both users
             await Promise.all([
                 // Notify the 'to' user (they received the second like that completed the match)
@@ -146,7 +145,7 @@ exports.onLikeCreated = (0, firestore_1.onDocumentCreated)({
         else {
             // NO MUTUAL MATCH - send swap_request notification to target user
             const fromUserDoc = await db.collection('users').doc(fromUid).get();
-            const fromUserName = ((_f = fromUserDoc.data()) === null || _f === void 0 ? void 0 : _f.displayName) || 'Someone';
+            const fromUserName = fromUserDoc.data()?.displayName || 'Someone';
             await createNotification(db, toUid, 'swap_request', 'New Swap Request!', `${fromUserName} wants to swap skills with you.`, {
                 senderId: fromUid,
                 senderName: fromUserName
@@ -180,9 +179,8 @@ async function createNotification(db, userId, type, title, body, data) {
  * Helper: Send push notification via Expo
  */
 async function sendPush(db, userId, title, body, data) {
-    var _a;
     const userDoc = await db.collection('users').doc(userId).get();
-    const pushToken = (_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.pushToken;
+    const pushToken = userDoc.data()?.pushToken;
     if (!pushToken || !pushToken.startsWith('ExponentPushToken[')) {
         console.log(`No valid push token for user ${userId}`);
         return;
@@ -219,8 +217,7 @@ exports.onMessageCreated = (0, firestore_1.onDocumentCreated)({
     document: 'matches/{matchId}/messages/{messageId}',
     region: 'asia-south1'
 }, async (event) => {
-    var _a, _b, _c, _d;
-    const messageData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
+    const messageData = event.data?.data();
     const matchId = event.params.matchId;
     if (!messageData)
         return;
@@ -233,8 +230,8 @@ exports.onMessageCreated = (0, firestore_1.onDocumentCreated)({
             return;
         }
         const matchData = matchDoc.data();
-        const users = (matchData === null || matchData === void 0 ? void 0 : matchData.users) || [];
-        const senderUid = (_b = messageData === null || messageData === void 0 ? void 0 : messageData.user) === null || _b === void 0 ? void 0 : _b._id;
+        const users = matchData?.users || [];
+        const senderUid = messageData?.user?._id;
         // Find the recipient UID (the other user in the 'users' array)
         const recipientUid = users.find((uid) => uid !== senderUid);
         if (!recipientUid) {
@@ -249,9 +246,9 @@ exports.onMessageCreated = (0, firestore_1.onDocumentCreated)({
             return;
         }
         const userData = userDoc.data();
-        const pushToken = userData === null || userData === void 0 ? void 0 : userData.pushToken;
-        const senderName = ((_c = messageData === null || messageData === void 0 ? void 0 : messageData.user) === null || _c === void 0 ? void 0 : _c.name) || 'Someone';
-        const senderPhotoURL = ((_d = messageData === null || messageData === void 0 ? void 0 : messageData.user) === null || _d === void 0 ? void 0 : _d.avatar) || '';
+        const pushToken = userData?.pushToken;
+        const senderName = messageData?.user?.name || 'Someone';
+        const senderPhotoURL = messageData?.user?.avatar || '';
         // 3. Always create in-app notification document in the root 'notifications' collection
         await admin.firestore().collection('notifications').add({
             userId: recipientUid,
@@ -317,9 +314,8 @@ exports.onMatchCreated = (0, firestore_1.onDocumentCreated)({
     document: 'matches/{matchId}',
     region: 'asia-south1'
 }, async (event) => {
-    var _a;
     const matchId = event.params.matchId;
-    const matchData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
+    const matchData = event.data?.data();
     if (!matchData)
         return;
     try {
@@ -334,8 +330,8 @@ exports.onMatchCreated = (0, firestore_1.onDocumentCreated)({
             // 1. Get other user's name
             const otherUserDoc = await admin.firestore().collection('users').doc(otherUser).get();
             const otherUserData = otherUserDoc.data();
-            const otherUserName = (otherUserData === null || otherUserData === void 0 ? void 0 : otherUserData.displayName) || 'Someone';
-            const otherUserPhotoURL = (otherUserData === null || otherUserData === void 0 ? void 0 : otherUserData.photoURL) || '';
+            const otherUserName = otherUserData?.displayName || 'Someone';
+            const otherUserPhotoURL = otherUserData?.photoURL || '';
             // 2. Save in-app notification
             await admin.firestore().collection('notifications').add({
                 userId: currentUser,
@@ -354,7 +350,7 @@ exports.onMatchCreated = (0, firestore_1.onDocumentCreated)({
             // 3. Optional: Send push notification if token exists
             const currentUserDoc = await admin.firestore().collection('users').doc(currentUser).get();
             const currentUserData = currentUserDoc.data();
-            const pushToken = currentUserData === null || currentUserData === void 0 ? void 0 : currentUserData.pushToken;
+            const pushToken = currentUserData?.pushToken;
             if (pushToken && pushToken.startsWith('ExponentPushToken[')) {
                 await (0, node_fetch_1.default)('https://exp.host/--/api/v2/push/send', {
                     method: 'POST',
@@ -386,4 +382,17 @@ Object.defineProperty(exports, "seedNewUserCredits", { enumerable: true, get: fu
 var spendCredits_1 = require("./spendCredits");
 Object.defineProperty(exports, "spendCredits", { enumerable: true, get: function () { return spendCredits_1.spendCredits; } });
 __exportStar(require("./payments"), exports);
+var videoCalls_1 = require("./videoCalls");
+Object.defineProperty(exports, "acceptVideoCallInvite", { enumerable: true, get: function () { return videoCalls_1.acceptVideoCallInvite; } });
+Object.defineProperty(exports, "createVideoCallInvite", { enumerable: true, get: function () { return videoCalls_1.createVideoCallInvite; } });
+Object.defineProperty(exports, "declineVideoCallInvite", { enumerable: true, get: function () { return videoCalls_1.declineVideoCallInvite; } });
+Object.defineProperty(exports, "endVideoCall", { enumerable: true, get: function () { return videoCalls_1.endVideoCall; } });
+Object.defineProperty(exports, "getStreamVideoToken", { enumerable: true, get: function () { return videoCalls_1.getStreamVideoToken; } });
+var chatThreads_1 = require("./chatThreads");
+Object.defineProperty(exports, "deleteChatThread", { enumerable: true, get: function () { return chatThreads_1.deleteChatThread; } });
+var requests_1 = require("./requests");
+Object.defineProperty(exports, "acceptRequest", { enumerable: true, get: function () { return requests_1.acceptRequest; } });
+Object.defineProperty(exports, "declineRequest", { enumerable: true, get: function () { return requests_1.declineRequest; } });
+var adminBulkCredits_1 = require("./adminBulkCredits");
+Object.defineProperty(exports, "grantAllUsersPlusTenCredits", { enumerable: true, get: function () { return adminBulkCredits_1.grantAllUsersPlusTenCredits; } });
 //# sourceMappingURL=index.js.map

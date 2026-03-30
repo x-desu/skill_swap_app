@@ -18,10 +18,10 @@ import {
   deleteDoc,
   addDoc,
   serverTimestamp,
-  writeBatch
+  writeBatch,
 } from '@react-native-firebase/firestore';
 import { upsertUserProfile } from './firestoreService';
-import type { AppNotification } from '../types/user';
+import type { AppNotification, AppNotificationData } from '../types/user';
 
 /**
  * notificationService.ts
@@ -39,7 +39,14 @@ type ChatRouteParams = {
   photoURL?: string;
 };
 
-// Global behavior is set in app/_layout.tsx
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 /**
  * Request notification permissions and get FCM token
@@ -133,7 +140,7 @@ export const showLocalNotification = async (
 };
 
 const normalizeChatRouteParams = (
-  data?: AppNotification['data'] | Record<string, any>
+  data?: AppNotificationData | Record<string, any>
 ): ChatRouteParams | null => {
   if (!data?.matchId) {
     return null;
@@ -153,9 +160,26 @@ const normalizeChatRouteParams = (
   };
 };
 
+const openRequestsTab = () => {
+  router.push({
+    pathname: '/(tabs)/matches',
+    params: { tab: 'requests' },
+  });
+};
+
 export const openNotificationDestination = (
-  data?: AppNotification['data'] | Record<string, any>
+  notification?: Pick<AppNotification, 'type' | 'data'> | AppNotificationData | Record<string, any>
 ): boolean => {
+  const type =
+    notification && 'type' in notification ? notification.type : notification?.type;
+  const data =
+    notification && 'data' in notification ? notification.data : notification;
+
+  if (type === 'swap_request') {
+    openRequestsTab();
+    return true;
+  }
+
   const chatParams = normalizeChatRouteParams(data);
 
   if (!chatParams) {
@@ -189,6 +213,10 @@ export const setupNotificationListeners = (): (() => void) => {
     (response: NotificationResponse) => {
       const data = response.notification.request.content.data as Record<string, any>;
       console.log('Notification tapped:', data);
+      if (data?.type === 'swap_request') {
+        openRequestsTab();
+        return;
+      }
       openNotificationDestination(data);
     }
   );
@@ -246,10 +274,13 @@ export const listenToNotifications = (
     (snap) => {
       console.log('[Notifications] Snapshot received, docs count:', snap?.docs?.length || 0);
       if (!snap) return callback([]);
-      const notifs = snap.docs.map((docSnap: any) => ({
-        ...(docSnap.data() as AppNotification),
-        id: docSnap.id,
-      }));
+      const notifs = snap.docs.map((docSnap: any) => {
+        const data = docSnap.data() as Omit<AppNotification, 'id'>;
+        return {
+          ...data,
+          id: docSnap.id,
+        } as AppNotification;
+      });
       console.log('[Notifications] Parsed notifications:', notifs.length);
       callback(notifs);
     },
@@ -274,6 +305,35 @@ export const markNotificationAsRead = async (uid: string, notificationId: string
   }
 };
 
+export const markNotificationsForMatchAsRead = async (
+  uid: string,
+  matchId: string,
+): Promise<void> => {
+  try {
+    const q = query(
+      notificationsCol(),
+      where('userId', '==', uid),
+      limit(100),
+    );
+    const snap = await getDocs(q);
+
+    const docsForMatch = snap.docs.filter((docSnap: any) => {
+      const data = docSnap.data() as AppNotification;
+      return data.type === 'new_message' && !data.read && data.data?.matchId === matchId;
+    });
+
+    if (docsForMatch.length === 0) return;
+
+    const batch = writeBatch(db());
+    docsForMatch.forEach((docSnap: any) => {
+      batch.update(docSnap.ref, { read: true });
+    });
+    await batch.commit();
+  } catch (err) {
+    console.warn('[NotificationService] Error marking match notifications read:', err);
+  }
+};
+
 /**
  * Mark all notifications as read
  */
@@ -282,14 +342,19 @@ export const markAllNotificationsAsRead = async (uid: string): Promise<void> => 
     const q = query(
       notificationsCol(),
       where('userId', '==', uid),
-      where('read', '==', false)
+      limit(100),
     );
     const snap = await getDocs(q);
-    
-    if (snap.empty) return;
+
+    const unreadDocs = snap.docs.filter((docSnap: any) => {
+      const data = docSnap.data() as AppNotification;
+      return !data.read;
+    });
+
+    if (unreadDocs.length === 0) return;
 
     const batch = writeBatch(db());
-    snap.docs.forEach((docSnap: any) => {
+    unreadDocs.forEach((docSnap: any) => {
       batch.update(docSnap.ref, { read: true });
     });
     await batch.commit();
@@ -339,7 +404,7 @@ export const deleteAllNotifications = async (uid: string): Promise<void> => {
  */
 export const sendInAppNotification = async (
   targetUid: string,
-  notification: Omit<AppNotification, 'id' | 'createdAt' | 'read'>
+  notification: Omit<AppNotification, 'id' | 'userId' | 'createdAt' | 'read'>
 ): Promise<void> => {
   try {
     await addDoc(notificationsCol(), {
@@ -360,7 +425,7 @@ export const sendPushNotification = async (
   targetUid: string,
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: AppNotificationData
 ): Promise<void> => {
   try {
     // 1. Fetch user's push token from Firestore

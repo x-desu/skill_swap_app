@@ -2,22 +2,16 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Moon, Sun, Smartphone, LogOut, Trash2, Crown, CreditCard } from 'lucide-react-native';
+import { ChevronLeft, Moon, Sun, Smartphone, LogOut, Trash2, Edit2 } from 'lucide-react-native';
 import { useTheme } from '../src/context/ThemeContext';
 import { useDispatch } from 'react-redux';
 import type { AppDispatch } from '../src/store';
 import { signOut } from '../src/store/authSlice';
-import { useSubscriptionStatus } from '../src/hooks/useSubscriptionStatus';
 
 export default function SettingsScreen() {
     const insets = useSafeAreaInsets();
     const { colors, themeMode, setThemeMode, isDark } = useTheme();
     const dispatch = useDispatch<AppDispatch>();
-    const { isPro } = useSubscriptionStatus();
-
-    const handleUpgrade = () => {
-        router.push('/paywall');
-    };
 
     const handleSignOut = () => {
         Alert.alert('Sign Out', 'Are you sure you want to log out?', [
@@ -59,29 +53,6 @@ export default function SettingsScreen() {
 
             <ScrollView contentContainerStyle={styles.content}>
                 
-                {/* Subscription Section */}
-                <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Subscription</Text>
-                    
-                    {isPro ? (
-                        <TouchableOpacity 
-                            style={[styles.actionButton, { backgroundColor: isDark ? '#1a3320' : '#E8F5E9', borderColor: '#4CD964' }]} 
-                            onPress={() => router.push('/customer-center')}
-                        >
-                            <Crown color="#4CD964" size={20} />
-                            <Text style={[styles.actionText, { color: '#4CD964' }]}>Pro Member - Manage</Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity 
-                            style={[styles.actionButton, { backgroundColor: isDark ? '#2a1a1a' : '#FFF5F5', borderColor: '#ff1a5c' }]} 
-                            onPress={handleUpgrade}
-                        >
-                            <Crown color="#ff1a5c" size={20} />
-                            <Text style={[styles.actionText, { color: '#ff1a5c' }]}>Upgrade to Pro</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-
                 {/* Theme Section */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
@@ -125,6 +96,11 @@ export default function SettingsScreen() {
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
                     
+                    <TouchableOpacity style={[styles.actionButton, { backgroundColor: isDark ? '#1E1E1E' : '#fff', borderColor: colors.border }]} onPress={() => router.push('/edit-profile')}>
+                        <Edit2 color={colors.text} size={20} />
+                        <Text style={[styles.actionText, { color: colors.text }]}>Edit Profile</Text>
+                    </TouchableOpacity>
+
                     <TouchableOpacity style={[styles.actionButton, { backgroundColor: isDark ? '#1E1E1E' : '#fff', borderColor: colors.border }]} onPress={handleSignOut}>
                         <LogOut color={colors.text} size={20} />
                         <Text style={[styles.actionText, { color: colors.text }]}>Log Out</Text>

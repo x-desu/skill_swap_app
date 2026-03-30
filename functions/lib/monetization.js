@@ -79,17 +79,16 @@ exports.revenueCatWebhook = (0, https_1.onRequest)({ region: 'asia-south1', invo
         return;
     }
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const event = body === null || body === void 0 ? void 0 : body.event;
-    if (!(event === null || event === void 0 ? void 0 : event.id) || !event.app_user_id) {
+    const event = body?.event;
+    if (!event?.id || !event.app_user_id) {
         res.status(400).send('Bad payload');
         return;
     }
     try {
         await db.runTransaction(async (tx) => {
-            var _a, _b, _c, _d;
             const evRef = db.collection('purchaseEvents').doc(String(event.id));
             const evSnap = await tx.get(evRef);
-            if (evSnap.exists && ((_a = evSnap.data()) === null || _a === void 0 ? void 0 : _a.processed) === true) {
+            if (evSnap.exists && evSnap.data()?.processed === true) {
                 return;
             }
             const uid = String(event.app_user_id);
@@ -97,11 +96,11 @@ exports.revenueCatWebhook = (0, https_1.onRequest)({ region: 'asia-south1', invo
             const userSnap = await tx.get(userRef);
             const grants = loadCreditGrants();
             const productId = String(event.product_id || '');
-            const creditDelta = (_b = grants[productId]) !== null && _b !== void 0 ? _b : 0;
+            const creditDelta = grants[productId] ?? 0;
             const shouldGrant = GRANT_EVENT_TYPES.has(String(event.type)) && creditDelta !== 0;
             const userPatch = {};
             if (userSnap.exists) {
-                const cur = (_d = (_c = userSnap.data()) === null || _c === void 0 ? void 0 : _c.credits) !== null && _d !== void 0 ? _d : 0;
+                const cur = userSnap.data()?.credits ?? 0;
                 if (shouldGrant) {
                     const nextCredits = cur + creditDelta;
                     userPatch.credits = nextCredits;
@@ -163,14 +162,13 @@ exports.seedNewUserCredits = (0, firestore_1.onDocumentCreated)({
     document: 'users/{uid}',
     region: 'asia-south1',
 }, async (event) => {
-    var _a;
     const snap = event.data;
     if (!snap)
         return;
     const data = snap.data();
     if (data.credits !== undefined && data.credits !== null)
         return;
-    const initial = Number((_a = process.env.INITIAL_USER_CREDITS) !== null && _a !== void 0 ? _a : '10');
+    const initial = Number(process.env.INITIAL_USER_CREDITS ?? '10');
     const amount = Number.isFinite(initial) ? initial : 10;
     await snap.ref.update({ credits: amount });
 });

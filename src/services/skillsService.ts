@@ -7,40 +7,37 @@
 import {
   getFirestore,
   collection,
-  query,
-  where,
-  getDocs,
-  getDoc,
   doc,
+  getDoc,
   setDoc,
   updateDoc,
-  increment,
+  query,
+  where,
   orderBy,
-  limit
+  limit as withLimit,
+  getDocs,
+  increment,
 } from '@react-native-firebase/firestore';
 import { Skill, SkillCategory } from '../types/user';
 
-const db = () => getFirestore();
-const skillsCol = () => collection(db(), 'skills');
+const skillsCol = () => collection(getFirestore(), 'skills');
 
 /**
  * Search the global skills catalog by prefix (case-insensitive via nameLower).
  * Returns up to 10 matching skills for autocomplete.
  */
-export const getSkillSuggestions = async (searchQuery: string): Promise<Skill[]> => {
-  if (!searchQuery.trim()) return [];
-  const lower = searchQuery.trim().toLowerCase();
-  
-  const q = query(
+export const getSkillSuggestions = async (searchTerm: string): Promise<Skill[]> => {
+  if (!searchTerm.trim()) return [];
+  const lower = searchTerm.trim().toLowerCase();
+  const skillsQuery = query(
     skillsCol(),
     where('nameLower', '>=', lower),
     where('nameLower', '<=', lower + '\uf8ff'),
     orderBy('nameLower'),
-    limit(10)
+    withLimit(10),
   );
-  
-  const snap = await getDocs(q);
-  return snap.docs.map((d: any) => ({ ...(d.data() as Skill), id: d.id }));
+  const snap = await getDocs(skillsQuery);
+  return snap.docs.map((skillDoc: any) => ({ ...(skillDoc.data() as Skill), id: skillDoc.id }));
 };
 
 /**
@@ -76,19 +73,17 @@ export const recordSkillUsage = async (
  */
 export const getPopularSkills = async (
   category?: SkillCategory,
-  limitCount = 12,
+  limit = 12,
 ): Promise<Skill[]> => {
-  let q = query(skillsCol(), orderBy('usageCount', 'desc'), limit(limitCount));
-  
+  let skillsQuery = query(skillsCol(), orderBy('usageCount', 'desc'), withLimit(limit));
   if (category) {
-    q = query(
+    skillsQuery = query(
       skillsCol(),
       where('category', '==', category),
       orderBy('usageCount', 'desc'),
-      limit(limitCount)
+      withLimit(limit),
     );
   }
-  
-  const snap = await getDocs(q);
-  return snap.docs.map((d: any) => ({ ...(d.data() as Skill), id: d.id }));
+  const snap = await getDocs(skillsQuery);
+  return snap.docs.map((skillDoc: any) => ({ ...(skillDoc.data() as Skill), id: skillDoc.id }));
 };

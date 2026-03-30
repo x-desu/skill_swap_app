@@ -2,11 +2,10 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, Settings, Edit2, Plus, Crown, Zap } from 'lucide-react-native';
+import { MapPin, Settings, Edit2, Plus, Crown, CreditCard, ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
+import type { RootState } from '../../src/store';
 import UserAvatar from '../../src/components/UserAvatar';
-import { useProfile } from '../../src/hooks/useProfile';
-import { useSubscriptionStatus } from '../../src/hooks/useSubscriptionStatus';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -14,17 +13,18 @@ const COLORS = {
   bgBase: '#0d0202',
   textPrimary: '#ffffff',
   textSecondary: 'rgba(255, 255, 255, 0.7)',
+  textMuted: 'rgba(255, 255, 255, 0.4)',
   borderLight: 'rgba(255, 255, 255, 0.1)',
   cardBg: 'rgba(255, 255, 255, 0.03)',
   statBg: 'rgba(255, 26, 92, 0.05)',
 };
 
+
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
-    const { profile: currentUser, isLoading } = useProfile();
-    const { isPro } = useSubscriptionStatus();
+    const currentUser = useSelector((state: RootState) => state.profile.profile);
 
-    if (isLoading || !currentUser) {
+    if (!currentUser) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
                 <ActivityIndicator size="large" color={COLORS.rosePrimary} />
@@ -57,19 +57,6 @@ export default function ProfileScreen() {
                     />
                     <Text style={styles.name}>{currentUser.displayName}</Text>
 
-                    {/* Pro Badge or Upgrade Banner */}
-                    {isPro ? (
-                        <View style={styles.proBadge}>
-                            <Crown color="#fff" size={14} />
-                            <Text style={styles.proBadgeText}>PRO MEMBER</Text>
-                        </View>
-                    ) : (
-                        <TouchableOpacity style={styles.upgradeBanner} onPress={() => router.push('/paywall')}>
-                            <Zap color="#ff1a5c" size={16} />
-                            <Text style={styles.upgradeBannerText}>Upgrade to Pro</Text>
-                        </TouchableOpacity>
-                    )}
-
                     <View style={styles.locationContainer}>
                         <MapPin color={COLORS.rosePrimary} size={14} />
                         <Text style={styles.location}>
@@ -77,7 +64,7 @@ export default function ProfileScreen() {
                         </Text>
                     </View>
 
-                    <TouchableOpacity style={styles.editButton}>
+                    <TouchableOpacity style={styles.editButton} onPress={() => router.push('/edit-profile')}>
                         <Edit2 color={COLORS.textPrimary} size={14} />
                         <Text style={styles.editButtonText}>Edit Profile</Text>
                     </TouchableOpacity>
@@ -109,6 +96,35 @@ export default function ProfileScreen() {
                             <Text style={styles.statSecondaryValue}>{creditsSpent.toFixed(1)}</Text>
                         </View>
                     </View>
+                </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Subscription</Text>
+                    <TouchableOpacity style={styles.subscriptionCard} onPress={() => router.push('/paywall')}>
+                        <View style={styles.subscriptionIcon}>
+                            <Crown color={COLORS.rosePrimary} size={22} />
+                        </View>
+                        <View style={styles.subscriptionCopy}>
+                            <Text style={styles.subscriptionTitle}>Upgrade Subscription</Text>
+                            <Text style={styles.subscriptionSubtitle}>
+                                Unlock premium benefits, manage Pro, and buy more credits.
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.subscriptionActionCard} onPress={() => router.push('/customer-center')}>
+                        <View style={styles.subscriptionActionLeft}>
+                            <View style={styles.subscriptionActionIcon}>
+                                <CreditCard color={COLORS.textPrimary} size={18} />
+                            </View>
+                            <View style={styles.subscriptionActionCopy}>
+                                <Text style={styles.subscriptionActionTitle}>Open Customer Center</Text>
+                                <Text style={styles.subscriptionActionSubtitle}>
+                                    Manage subscription status, restores, and billing help.
+                                </Text>
+                            </View>
+                        </View>
+                        <ChevronRight color={COLORS.textMuted} size={18} />
+                    </TouchableOpacity>
                 </View>
 
                 <View style={styles.section}>
@@ -193,38 +209,6 @@ const styles = StyleSheet.create({
         color: COLORS.textPrimary,
         marginTop: 15,
         marginBottom: 4,
-    },
-    proBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#00C2A0',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-        gap: 6,
-        marginBottom: 15,
-    },
-    proBadgeText: {
-        color: '#fff',
-        fontWeight: '800',
-        fontSize: 12,
-    },
-    upgradeBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255, 26, 92, 0.15)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        gap: 8,
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 26, 92, 0.4)',
-    },
-    upgradeBannerText: {
-        color: '#ff1a5c',
-        fontWeight: '700',
-        fontSize: 14,
     },
     locationContainer: {
         flexDirection: 'row',
@@ -337,6 +321,78 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         borderWidth: 1,
         borderColor: COLORS.borderLight,
+    },
+    subscriptionCard: {
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    subscriptionActionCard: {
+        marginTop: 12,
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    subscriptionIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255, 26, 92, 0.14)',
+        marginRight: 14,
+    },
+    subscriptionCopy: {
+        flex: 1,
+    },
+    subscriptionActionLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 12,
+    },
+    subscriptionActionIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        marginRight: 12,
+    },
+    subscriptionActionCopy: {
+        flex: 1,
+    },
+    subscriptionTitle: {
+        color: COLORS.textPrimary,
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    subscriptionSubtitle: {
+        color: COLORS.textSecondary,
+        fontSize: 13,
+        marginTop: 6,
+    },
+    subscriptionActionTitle: {
+        color: COLORS.textPrimary,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    subscriptionActionSubtitle: {
+        color: COLORS.textSecondary,
+        fontSize: 13,
+        marginTop: 4,
+        lineHeight: 18,
     },
     bio: {
         fontSize: 15,

@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { Provider, useDispatch } from 'react-redux';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -9,28 +8,25 @@ import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider';
 import { ThemeProvider } from '../src/context/ThemeContext';
-import { upsertUserProfile } from '../src/services/firestoreService';
-import { initRevenueCat, revenueCatLogIn, revenueCatLogOut } from '../src/services/revenueCatService';
-import * as Notifications from 'expo-notifications';
-import { requestNotificationPermissions, setupNotificationListeners } from '../src/services/notificationService';
+import { listenToUserProfile, upsertUserProfile } from '../src/services/firestoreService';
+import { clearProfile, setProfile } from '../src/store/profileSlice';
+import { clearDiscovery } from '../src/store/discoverySlice';
+import {
+  clearBadgeCount,
+  requestNotificationPermissions,
+  setupNotificationListeners,
+} from '../src/services/notificationService';
+import DataProvider from '../src/components/DataProvider';
+import IncomingCallBanner from '../src/components/IncomingCallBanner';
 import '../global.css';
-import { setJSExceptionHandler } from 'react-native-exception-handler';
-import Toast from 'react-native-toast-message';
-import AppErrorBoundary from '../src/components/AppErrorBoundary';
+import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
-setJSExceptionHandler((error, isFatal) => {
-  console.log("GLOBAL ERROR:", error);
-}, true);
-
-// ─── Configure Global Notification Behavior ──────────────────────────────────
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+// GiftedChat v3.3.2 calls useKeyboardAnimation unconditionally during render,
+// which triggers Reanimated strict mode warnings we cannot fix without patching
+// the library source. Disable strict mode globally as the recommended workaround.
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
 });
 
 GoogleSignin.configure({
@@ -45,9 +41,19 @@ function AppNavigator() {
   // On every login, upsertUserProfile creates the doc if missing (first login)
   // or is a no-op merge (subsequent logins)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(getAuth(), async (firebaseUser) => {
+    let profileUnsubscribe: (() => void) | null = null;
+    let notificationUnsubscribe: (() => void) | null = null;
+    const authInstance = getAuth();
+
+    const unsubscribe = onAuthStateChanged(authInstance, async (firebaseUser) => {
+      if (notificationUnsubscribe) {
+        notificationUnsubscribe();
+        notificationUnsubscribe = null;
+      }
+
       if (firebaseUser) {
         // Hold routing until Firestore is checked
+        dispatch(clearDiscovery()); // clear stale feed before fresh fetch
         dispatch(setAppLoading(true));
         
         // 1. Update Redux with Firebase Auth fields
@@ -60,47 +66,74 @@ function AppNavigator() {
             isAnonymous: firebaseUser.isAnonymous,
           }),
         );
-        void initRevenueCat().then(() => revenueCatLogIn(firebaseUser.uid));
+
+        notificationUnsubscribe = setupNotificationListeners();
+        void requestNotificationPermissions(firebaseUser.uid);
         // 2. Create/merge Firestore user document (idempotent)
-        // Wrapped in try/catch — silently skips if Firestore rules aren't published yet
         try {
+          // Only pass non-null fields to avoid overwriting existing data
+          const bootstrapData: any = { email: firebaseUser.email };
+          if (firebaseUser.displayName) bootstrapData.displayName = firebaseUser.displayName;
+          if (firebaseUser.photoURL) {
+            bootstrapData.photoURL = firebaseUser.photoURL;
+            bootstrapData.hasPhoto = true;
+          }
+
           console.log('[SkillSwap Auth] Upserting user profile...');
-          await upsertUserProfile(firebaseUser.uid, {
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName ?? '',
-            photoURL: firebaseUser.photoURL,
-            hasPhoto: !!firebaseUser.photoURL,
-          });
+          await upsertUserProfile(firebaseUser.uid, bootstrapData);
           
-          dispatch(setProfileComplete(true));
+          console.log('[SkillSwap Auth] Attaching real-time profile listener...');
+          if (profileUnsubscribe) profileUnsubscribe();
+          
+          let hasReleased = false;
 
-          // 3. Setup Push Notifications (Steps 1 & 2)
-          // We don't await this to avoid blocking the app mount
-          requestNotificationPermissions(firebaseUser.uid);
+          profileUnsubscribe = listenToUserProfile(firebaseUser.uid, (doc) => {
+            if (doc) {
+              dispatch(setProfile(doc));
+              dispatch(setProfileComplete(doc.isProfileComplete ?? false));
+            }
+            
+            // Release the loading gate exactly once on the first snapshot
+            if (!hasReleased) {
+               hasReleased = true;
+               dispatch(setAppLoading(false));
+            }
+          });
 
-          // 4. Setup Foreground & Tap Listeners (Steps 5 & 6)
-          const cleanup = setupNotificationListeners();
-          return cleanup;
+          // Safeguard: Release the loading lock after 3s if Firestore listener is taking too long
+          setTimeout(() => {
+            if (!hasReleased) {
+              console.warn('[SkillSwap Auth] Release timeout triggered — proceeding with possibly stale state');
+              hasReleased = true;
+              dispatch(setAppLoading(false));
+            }
+          }, 3000);
+
         } catch (e: any) {
           if (e?.code === 'firestore/permission-denied') {
             console.warn('[SkillSwap] Firestore rules not published yet — user doc not synced');
           } else {
             console.error('[SkillSwap] upsertUserProfile error:', e);
           }
-        } finally {
-          console.log('[SkillSwap Auth] Releasing loading lock');
           dispatch(setAppLoading(false));
         }
       } else {
-        void revenueCatLogOut();
+        if (profileUnsubscribe) {
+          profileUnsubscribe();
+          profileUnsubscribe = null;
+        }
         dispatch(setUser(null));
+        dispatch(clearProfile());
         dispatch(setProfileComplete(false));
         dispatch(setAppLoading(false));
+        void clearBadgeCount();
       }
     });
 
     return () => {
       unsubscribe();
+      if (profileUnsubscribe) profileUnsubscribe();
+      if (notificationUnsubscribe) notificationUnsubscribe();
     };
   }, [dispatch]);
 
@@ -114,20 +147,21 @@ function AppNavigator() {
         options={{ presentation: 'modal', headerShown: false }}
       />
       <Stack.Screen
-        name="chat"
-        options={{ headerShown: false, animation: 'slide_from_right' }}
+        name="chat/[id]"
+        options={{ headerShown: false, title: 'Chat', animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="call/[id]"
+        options={{
+          headerShown: false,
+          title: 'Call',
+          animation: 'slide_from_right',
+          gestureEnabled: false,
+        }}
       />
       <Stack.Screen
         name="settings"
         options={{ headerShown: false, presentation: 'modal' }}
-      />
-      <Stack.Screen
-        name="paywall"
-        options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
-      />
-      <Stack.Screen
-        name="customer-center"
-        options={{ headerShown: false, presentation: 'modal', animation: 'slide_from_right' }}
       />
     </Stack>
   );
@@ -135,23 +169,17 @@ function AppNavigator() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={styles.root}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <Provider store={store}>
         <GluestackUIProvider mode="dark">
           <ThemeProvider>
-            <AppErrorBoundary>
+            <DataProvider>
               <AppNavigator />
-            </AppErrorBoundary>
+              <IncomingCallBanner />
+            </DataProvider>
           </ThemeProvider>
         </GluestackUIProvider>
       </Provider>
-      <Toast />
     </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-});

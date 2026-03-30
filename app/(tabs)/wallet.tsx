@@ -1,304 +1,263 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useSelector } from 'react-redux';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Clock, TrendingUp, TrendingDown, Plus, Crown, Settings } from 'lucide-react-native';
-import { router } from 'expo-router';
-import { useTheme } from '../../src/context/ThemeContext';
-import ProfileGlowBackground from '../../src/components/ProfileGlowBackground';
-import { getProfileBaseColor } from '../../src/utils/colorUtils';
-import { useProfile } from '../../src/hooks/useProfile';
-import { listenToCreditLedger } from '../../src/services/firestoreService';
-import { usePurchases } from '../../src/hooks/usePurchases';
-import type { CreditLedgerEntry } from '../../src/types/credits';
+import { Wallet, Crown, Bell, MessageSquare, ChevronRight, Plus } from 'lucide-react-native';
+import type { RootState } from '../../src/store';
+import { useSubscriptionStatus } from '../../src/hooks/useSubscriptionStatus';
+import UserAvatar from '../../src/components/UserAvatar';
 
 export default function WalletScreen() {
-  const { profile, isLoading } = useProfile();
-  const [ledger, setLedger] = useState<CreditLedgerEntry[]>([]);
-  const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
-  
-  // RevenueCat subscription status
-  const { isPro, proEntitlement, isLoading: isLoadingPurchases } = usePurchases(profile?.uid ?? null);
+    const router = useRouter();
+    const insets = useSafeAreaInsets();
+    const authUser = useSelector((state: RootState) => state.auth.user);
+    const profile = useSelector((state: RootState) => state.profile.profile);
+    const { isPro, isLoading } = useSubscriptionStatus();
 
-  useEffect(() => {
-    if (!profile?.uid) return;
-    return listenToCreditLedger(profile.uid, setLedger);
-  }, [profile?.uid]);
+    if (!authUser || !profile) {
+        return (
+            <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
+                <ActivityIndicator size="large" color={COLORS.rosePrimary} />
+            </View>
+        );
+    }
 
-  if (isLoading || !profile) {
+    const membershipLabel = isLoading ? 'Checking membership...' : (isPro ? 'Pro Member' : 'Free Member');
+
     return (
-      <View style={[styles.loading, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#FF5A5F" />
-      </View>
-    );
-  }
-
-  const baseColor = getProfileBaseColor({
-    id: profile.uid,
-    avatar: profile.photoURL || undefined,
-    profileColor: '#FF5A5F',
-  });
-  const seedKey = `tab:wallet:${profile.uid}`;
-  const balance = profile.credits ?? 0;
-
-  return (
-    <ProfileGlowBackground baseColor={baseColor} seedKey={seedKey}>
-      <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: 90, backgroundColor: 'transparent' }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Wallet</Text>
-
-        <View style={[styles.card, { backgroundColor: isDark ? '#1E1E1E' : '#333' }]}>
-          <Text style={styles.cardLabel}>Available Balance</Text>
-          <View style={styles.balanceRow}>
-            <Clock color="#fff" size={32} />
-            <Text style={styles.balance}>{balance.toFixed(1)}</Text>
-            <Text style={styles.unit}>Credits</Text>
-          </View>
-          <Text style={styles.subText}>1 Credit ≈ 1 Hour of Service</Text>
-        </View>
-
-        <TouchableOpacity style={styles.addButton} onPress={() => router.push('/paywall')}>
-          <Plus color="#fff" size={20} />
-          <Text style={styles.addButtonText}>Buy More Credits</Text>
-        </TouchableOpacity>
-
-        {/* Subscription Status Card */}
-        <View style={[styles.subscriptionCard, isPro && styles.subscriptionCardPro]}>
-          <View style={styles.subscriptionHeader}>
-            <Crown color={isPro ? '#00C2A0' : '#999'} size={24} />
-            <Text style={[styles.subscriptionTitle, isPro && styles.subscriptionTitlePro]}>
-              {isPro ? 'Pro Member' : 'Free Member'}
-            </Text>
-            {isPro && (
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>ACTIVE</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.subscriptionDescription}>
-            {isPro
-              ? 'You have unlimited access to all premium features and priority matching.'
-              : 'Upgrade to Pro for unlimited credits and exclusive features.'}
-          </Text>
-          <TouchableOpacity
-            style={[styles.manageButton, isPro ? styles.manageButtonPro : styles.manageButtonFree]}
-            onPress={() => router.push('/customer-center')}
-          >
-            <Settings color={isPro ? '#00C2A0' : '#fff'} size={16} />
-            <Text style={[styles.manageButtonText, isPro && styles.manageButtonTextPro]}>
-              {isPro ? 'Manage Subscription' : 'View Plans'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>History</Text>
-
-        {ledger.length === 0 ? (
-          <Text style={[styles.emptyText, { color: colors.text }]}>No transactions yet</Text>
-        ) : (
-          ledger.map((tx) => {
-            const isEarn = tx.delta >= 0;
-            const amountText = `${isEarn ? '+' : ''}${tx.delta.toFixed(1)}`;
-            const created = tx.createdAt as { toDate?: () => Date } | undefined;
-            const dateLabel = created?.toDate ? created.toDate()?.toLocaleDateString?.() ?? '' : '';
-            const iconBg = isEarn
-              ? isDark
-                ? '#1a3320'
-                : '#E8F5E9'
-              : isDark
-                ? '#332020'
-                : '#FFEBEE';
-
-            return (
-              <View key={tx.id} style={styles.transaction}>
-                <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
-                  {isEarn ? <TrendingUp color="#4CD964" size={24} /> : <TrendingDown color="#FF5A5F" size={24} />}
+        <ScrollView
+            style={[styles.container, { paddingTop: insets.top }]}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+        >
+            <View style={styles.headerRow}>
+                <View>
+                    <Text style={styles.title}>Wallet</Text>
+                    <Text style={styles.subtitle}>Credits, payments, and membership</Text>
                 </View>
-                <View style={styles.transInfo}>
-                  <Text style={[styles.transTitle, { color: colors.text }]}>{tx.reason}</Text>
-                  <Text style={styles.transDate}>{dateLabel}</Text>
+                <UserAvatar
+                    uid={authUser.uid}
+                    displayName={authUser.displayName}
+                    photoURL={authUser.photoURL}
+                    size={44}
+                />
+            </View>
+
+            <View style={styles.balanceCard}>
+                <View style={styles.balanceHeader}>
+                    <View style={styles.balanceIcon}>
+                        <Wallet color={COLORS.rosePrimary} size={24} />
+                    </View>
+                    <View>
+                        <Text style={styles.cardLabel}>Available Credits</Text>
+                        <Text style={styles.membershipPill}>{membershipLabel}</Text>
+                    </View>
                 </View>
-                <Text style={isEarn ? styles.transAmountPositive : [styles.transAmountNegative, { color: colors.text }]}>
-                  {amountText}
+
+                <View style={styles.balanceRow}>
+                    <Text style={styles.balance}>{profile.credits.toFixed(1)}</Text>
+                    <Text style={styles.unit}>credits</Text>
+                </View>
+
+                <Text style={styles.subText}>
+                    Buy more credits with Razorpay or manage premium access through RevenueCat.
                 </Text>
-              </View>
-            );
-          })
-        )}
-      </ScrollView>
-    </ProfileGlowBackground>
-  );
+            </View>
+
+            <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/paywall')}>
+                <Plus color="#fff" size={18} />
+                <Text style={styles.primaryButtonText}>Buy Credits</Text>
+            </TouchableOpacity>
+
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Manage</Text>
+
+                <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/customer-center')}>
+                    <View style={[styles.actionIcon, { backgroundColor: 'rgba(255, 26, 92, 0.12)' }]}>
+                        <Crown color={COLORS.rosePrimary} size={20} />
+                    </View>
+                    <View style={styles.actionTextWrap}>
+                        <Text style={styles.actionTitle}>Customer Center</Text>
+                        <Text style={styles.actionSubtitle}>Manage subscription and restore purchases</Text>
+                    </View>
+                    <ChevronRight color={COLORS.textMuted} size={18} />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/notifications')}>
+                    <View style={[styles.actionIcon, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+                        <Bell color="#60a5fa" size={20} />
+                    </View>
+                    <View style={styles.actionTextWrap}>
+                        <Text style={styles.actionTitle}>Notifications</Text>
+                        <Text style={styles.actionSubtitle}>Open your in-app alerts and match activity</Text>
+                    </View>
+                    <ChevronRight color={COLORS.textMuted} size={18} />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionRow} onPress={() => router.push('/(tabs)/matches')}>
+                    <View style={[styles.actionIcon, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <MessageSquare color="#34d399" size={20} />
+                    </View>
+                    <View style={styles.actionTextWrap}>
+                        <Text style={styles.actionTitle}>Chats & Matches</Text>
+                        <Text style={styles.actionSubtitle}>Jump back into your active conversations</Text>
+                    </View>
+                    <ChevronRight color={COLORS.textMuted} size={18} />
+                </TouchableOpacity>
+            </View>
+        </ScrollView>
+    );
 }
 
+const COLORS = {
+    rosePrimary: '#ff1a5c',
+    bgBase: '#0d0202',
+    cardBg: 'rgba(255, 255, 255, 0.04)',
+    borderLight: 'rgba(255, 255, 255, 0.08)',
+    textPrimary: '#ffffff',
+    textSecondary: 'rgba(255, 255, 255, 0.72)',
+    textMuted: 'rgba(255, 255, 255, 0.45)',
+};
+
 const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1, paddingHorizontal: 20 },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  card: {
-    borderRadius: 20,
-    padding: 25,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  cardLabel: {
-    color: '#aaa',
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginBottom: 10,
-  },
-  balanceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 5,
-  },
-  balance: {
-    color: '#fff',
-    fontSize: 48,
-    fontWeight: 'bold',
-    marginHorizontal: 10,
-  },
-  unit: {
-    color: '#aaa',
-    fontSize: 18,
-  },
-  subText: {
-    color: '#666',
-    fontSize: 12,
-  },
-  addButton: {
-    backgroundColor: '#FF5A5F',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 18,
-    borderRadius: 15,
-    marginBottom: 30,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginLeft: 8,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 15,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 8,
-  },
-  transaction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 5,
-  },
-  iconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  transInfo: {
-    flex: 1,
-  },
-  transTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  transDate: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 2,
-  },
-  transAmountPositive: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4CD964',
-  },
-  transAmountNegative: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  subscriptionCard: {
-    backgroundColor: '#1E1E1E',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  subscriptionCardPro: {
-    borderColor: '#00C2A0',
-    backgroundColor: '#00C2A010',
-  },
-  subscriptionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  subscriptionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#999',
-    marginLeft: 10,
-    flex: 1,
-  },
-  subscriptionTitlePro: {
-    color: '#00C2A0',
-  },
-  proBadge: {
-    backgroundColor: '#00C2A0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  proBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  subscriptionDescription: {
-    color: '#aaa',
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  manageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  manageButtonPro: {
-    backgroundColor: '#00C2A020',
-    borderWidth: 1,
-    borderColor: '#00C2A0',
-  },
-  manageButtonFree: {
-    backgroundColor: '#FF5A5F',
-  },
-  manageButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  manageButtonTextPro: {
-    color: '#00C2A0',
-  },
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.bgBase,
+        paddingHorizontal: 20,
+    },
+    content: {
+        paddingBottom: 120,
+    },
+    center: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 24,
+    },
+    title: {
+        fontSize: 28,
+        fontWeight: '800',
+        color: COLORS.textPrimary,
+    },
+    subtitle: {
+        marginTop: 6,
+        color: COLORS.textSecondary,
+        fontSize: 14,
+    },
+    balanceCard: {
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 20,
+        padding: 25,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+    },
+    balanceHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 18,
+    },
+    balanceIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 26, 92, 0.12)',
+        marginRight: 14,
+    },
+    cardLabel: {
+        color: COLORS.textSecondary,
+        fontSize: 14,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.4,
+    },
+    membershipPill: {
+        marginTop: 6,
+        color: COLORS.rosePrimary,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    balanceRow: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        marginBottom: 8,
+    },
+    balance: {
+        color: COLORS.textPrimary,
+        fontSize: 48,
+        fontWeight: '800',
+    },
+    unit: {
+        color: COLORS.textSecondary,
+        fontSize: 18,
+        marginLeft: 8,
+    },
+    subText: {
+        color: COLORS.textSecondary,
+        fontSize: 14,
+        lineHeight: 20,
+    },
+    primaryButton: {
+        backgroundColor: COLORS.rosePrimary,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 18,
+        borderRadius: 15,
+        marginBottom: 30,
+    },
+    primaryButtonText: {
+        color: '#fff',
+        fontWeight: '800',
+        fontSize: 16,
+        marginLeft: 8,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: COLORS.textPrimary,
+        marginBottom: 15,
+    },
+    section: {
+        marginBottom: 24,
+    },
+    actionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: COLORS.borderLight,
+        marginBottom: 12,
+    },
+    actionIcon: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
+    },
+    actionTextWrap: {
+        flex: 1,
+    },
+    actionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+    },
+    actionSubtitle: {
+        marginTop: 4,
+        fontSize: 13,
+        color: COLORS.textSecondary,
+    },
 });

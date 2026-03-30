@@ -1,63 +1,96 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { View, Text, Image, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { User } from '../types';
-import { MapPin, Clock } from 'lucide-react-native';
-import { useTheme } from '../context/ThemeContext';
-import { generateGradient, getRandomThemeColor } from '../utils/colorUtils';
+import { MapPin, Star } from 'lucide-react-native';
+import { UserDocument } from '../types/user';
+import { generateGradient, getProfileBaseColor } from '../utils/colorUtils';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.9;
-const CARD_HEIGHT = 500;
+
+const COLORS = {
+    rosePrimary: '#ff1a5c',
+    bgBase: '#0d0202',
+};
 
 interface SwipeCardProps {
-    user: User;
+    user: UserDocument;
 }
 
-export default function SwipeCard({ user }: SwipeCardProps) {
-    const primarySkill = user.skillsOffered[0];
-    const { colors } = useTheme();
+function SwipeCard({ user }: SwipeCardProps) {
+    const cardWidth = width * 0.9;
+    const cardHeight = Math.min(540, width * 1.38);
+    
+    // Memoize expensive calculations
+    const accent = useMemo(() => getProfileBaseColor({
+        id: user.uid,
+        avatar: user.photoURL ?? undefined,
+    }), [user.uid, user.photoURL]);
+    
+    const gradientColors = useMemo(() => generateGradient(accent, 3), [accent]);
+    
+    const avatarUri = useMemo(() =>
+        user.photoURL || `https://api.dicebear.com/9.x/thumbs/png?seed=${user.uid}&backgroundColor=ff1a5c`,
+        [user.photoURL, user.uid]
+    );
+    
+    const locationLabel = useMemo(() => 
+        [user.location?.city, user.location?.country].filter(Boolean).join(', ') || 'Nearby',
+        [user.location?.city, user.location?.country]
+    );
+    
+    const teaches = user.teachSkills?.filter(Boolean) ?? [];
+    const wants = user.wantSkills?.filter(Boolean) ?? [];
+    const ratingLabel = user.rating > 0 ? user.rating.toFixed(1) : 'New';
 
     return (
-        <View style={[styles.card, { backgroundColor: colors.cardBackground }]}>
-            <Image source={{ uri: user.avatar }} style={styles.image} resizeMode="cover" />
+        <View style={[styles.card, { width: cardWidth, height: cardHeight, borderColor: `${accent}33` }]}>
+            <Image source={{ uri: avatarUri }} style={styles.image} resizeMode="cover" />
 
             <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.9)']}
+                colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.95)']}
                 style={styles.gradient}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
+                locations={[0, 0.4, 0.7, 1]}
             >
                 <View style={styles.content}>
                     <View style={styles.header}>
-                        <Text style={styles.name}>{user.name}</Text>
+                        <Text style={styles.name} numberOfLines={1}>{user.displayName}</Text>
                         <LinearGradient 
-                            colors={generateGradient(primarySkill.color || getRandomThemeColor(), 3)}
+                            colors={gradientColors}
                             style={styles.badge}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                         >
-                            <Text style={styles.badgeText}>{primarySkill.category}</Text>
+                            <Star color="#fff" size={12} fill="#fff" />
+                            <Text style={styles.badgeText}>{ratingLabel}</Text>
                         </LinearGradient>
                     </View>
 
-                    <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
+                    <Text style={styles.bio} numberOfLines={2}>
+                        {user.bio || 'Ready to trade skills and start something new.'}
+                    </Text>
 
                     <View style={styles.row}>
-                        <MapPin color="#fff" size={16} />
-                        <Text style={styles.infoText}> {user.location}</Text>
+                        <MapPin color={COLORS.rosePrimary} size={14} />
+                        <Text style={styles.infoText}>{locationLabel}</Text>
                     </View>
 
-                    <View style={styles.divider} />
+                    <View style={[styles.divider, { backgroundColor: `${accent}44` }]} />
 
-                    <View style={styles.skillRow}>
-                        <View>
-                            <Text style={styles.label}>OFFERS</Text>
-                            <Text style={styles.skillTitle}>{primarySkill.title}</Text>
+                    <View style={styles.skillsSection}>
+                        <View style={styles.skillBlock}>
+                            <Text style={[styles.label, { color: COLORS.rosePrimary }]}>TEACHING</Text>
+                            <Text style={styles.skillTitle} numberOfLines={1}>
+                                {teaches[0] || 'Open to teach'}
+                            </Text>
                         </View>
-                        <View style={styles.costContainer}>
-                            <Clock color="#FFD700" size={16} />
-                            <Text style={styles.costText}>{primarySkill.cost} credit/hr</Text>
+
+                        <View style={styles.skillBlock}>
+                            <Text style={styles.label}>LEARNING</Text>
+                            <View style={styles.wantPill}>
+                                <Text style={styles.wantText} numberOfLines={1}>
+                                    {wants[0] || 'Open to learn'}
+                                </Text>
+                            </View>
                         </View>
                     </View>
                 </View>
@@ -66,19 +99,15 @@ export default function SwipeCard({ user }: SwipeCardProps) {
     );
 }
 
+export default memo(SwipeCard);
+
 const styles = StyleSheet.create({
     card: {
-        width: CARD_WIDTH,
-        height: CARD_HEIGHT,
-        borderRadius: 20,
-        backgroundColor: '#fff',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-        elevation: 5,
+        borderRadius: 24,
+        backgroundColor: COLORS.bgBase,
         overflow: 'hidden',
-        position: 'absolute', // Stacked cards
+        position: 'absolute',
+        borderWidth: 1.5,
     },
     image: {
         width: '100%',
@@ -89,12 +118,12 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        height: '50%',
+        height: '70%',
         justifyContent: 'flex-end',
-        padding: 20,
+        padding: 24,
     },
     content: {
-        paddingBottom: 20,
+        width: '100%',
     },
     header: {
         flexDirection: 'row',
@@ -103,28 +132,35 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     name: {
-        fontSize: 28,
-        fontWeight: 'bold',
+        fontSize: 32,
+        fontWeight: '900',
         color: '#fff',
+        flex: 1,
+        letterSpacing: -0.5,
     },
     badge: {
-        paddingHorizontal: 12,
+        paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 12,
-        marginLeft: 8,
-        minWidth: 60,
+        flexDirection: 'row',
         alignItems: 'center',
+        gap: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
     },
     badgeText: {
         color: '#fff',
-        fontWeight: '600',
-        fontSize: 12,
+        fontWeight: '800',
+        fontSize: 13,
     },
     bio: {
-        fontSize: 16,
-        color: '#eee',
-        marginBottom: 12,
-        lineHeight: 22,
+        fontSize: 15,
+        color: 'rgba(255,255,255,0.85)',
+        marginBottom: 16,
+        lineHeight: 20,
+        fontWeight: '500',
     },
     row: {
         flexDirection: 'row',
@@ -132,42 +168,51 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     infoText: {
-        color: '#ddd',
-        fontSize: 14,
-        marginLeft: 4,
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 13,
+        marginLeft: 6,
+        fontWeight: '600',
     },
     divider: {
         height: 1,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        marginVertical: 12,
+        width: '100%',
+        marginBottom: 16,
+        opacity: 0.6,
     },
-    skillRow: {
+    skillsSection: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        gap: 12,
+    },
+    skillBlock: {
+        flex: 1,
     },
     label: {
-        color: '#aaa',
-        fontSize: 10,
-        fontWeight: 'bold',
-        marginBottom: 4,
+        fontSize: 11,
+        fontWeight: '900',
+        marginBottom: 6,
+        letterSpacing: 1.2,
+        opacity: 0.9,
     },
     skillTitle: {
         color: '#fff',
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '800',
+        letterSpacing: -0.3,
     },
-    costContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        paddingHorizontal: 10,
+    wantPill: {
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        paddingHorizontal: 12,
         paddingVertical: 6,
-        borderRadius: 8,
+        borderRadius: 10,
+        alignSelf: 'flex-start',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
     },
-    costText: {
-        color: '#FFD700',
-        fontWeight: 'bold',
-        marginLeft: 6,
+    wantText: {
+        color: '#fff',
+        fontWeight: '700',
+        fontSize: 14,
     },
 });

@@ -1,17 +1,21 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { Search as SearchIcon, SlidersHorizontal } from 'lucide-react-native';
 import { SkillCategory, CATEGORY_SKILLS_MAP } from '../../types/discover';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
+  rose20: 'rgba(255, 26, 92, 0.2)',
   bgBase: '#0d0202',
-  borderLight: 'rgba(255, 255, 255, 0.1)',
+  bgDark: '#1a0505',
+  borderLight: 'rgba(255, 255, 255, 0.12)',
+  textPrimary: '#ffffff',
+  textSecondary: 'rgba(255, 255, 255, 0.7)',
   textMuted: 'rgba(255, 255, 255, 0.4)',
-  borderSubtle: 'rgba(255, 255, 255, 0.08)',
+  glass: 'rgba(26, 5, 5, 0.8)',
 };
 
+// Computed once at module level — categories never change
 const categories = Object.keys(CATEGORY_SKILLS_MAP) as SkillCategory[];
 
 interface SearchHeaderProps {
@@ -23,32 +27,35 @@ interface SearchHeaderProps {
   activeFilterCount: number;
 }
 
-export function SearchHeader({
+function SearchHeaderComponent({
   searchQuery,
   onSearchChange,
   selectedCategory,
   onSelectCategory,
   onOpenFilters,
-  activeFilterCount
+  activeFilterCount,
 }: SearchHeaderProps) {
-  
   return (
     <View style={styles.container}>
-      {/* Search & Filter Row */}
+      <View style={styles.headerTop}>
+        <Text style={styles.title}>Discover</Text>
+      </View>
+
       <View style={styles.searchRow}>
-        <BlurView intensity={20} tint="dark" style={styles.searchBar}>
-          <SearchIcon color={COLORS.textMuted} size={16} />
+        <View style={styles.searchBar}>
+          <SearchIcon color={COLORS.rosePrimary} size={18} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search skills, names, bios..."
+            placeholder="Skills, people, or hobbies..."
             placeholderTextColor={COLORS.textMuted}
             value={searchQuery}
             onChangeText={onSearchChange}
+            returnKeyType="search"
           />
-        </BlurView>
-        
-        <TouchableOpacity style={styles.filterBtn} onPress={onOpenFilters}>
-          <SlidersHorizontal color="#fff" size={18} />
+        </View>
+
+        <TouchableOpacity style={styles.filterBtn} onPress={onOpenFilters} activeOpacity={0.75}>
+          <SlidersHorizontal color="#fff" size={20} />
           {activeFilterCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{activeFilterCount}</Text>
@@ -57,109 +64,136 @@ export function SearchHeader({
         </TouchableOpacity>
       </View>
 
-      {/* Categories Row */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoriesRow}
+        keyboardShouldPersistTaps="handled"
+        snapToInterval={80}
+        decelerationRate="fast"
       >
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat}
-            style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
-            onPress={() => onSelectCategory(cat)}
-          >
-            <Text style={[styles.categoryText, selectedCategory === cat && styles.categoryTextActive]}>
-              {cat}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {categories.map((cat) => {
+          const isActive = selectedCategory === cat;
+          return (
+            <TouchableOpacity
+              key={cat}
+              style={[
+                styles.categoryPill,
+                isActive && styles.categoryPillActive,
+                isActive && { shadowColor: COLORS.rosePrimary }
+              ]}
+              onPress={() => onSelectCategory(cat)}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
+                {cat}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
     </View>
   );
 }
 
+export const SearchHeader = memo(SearchHeaderComponent);
+
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 16,
     zIndex: 10,
+  },
+  headerTop: {
+    paddingHorizontal: 22,
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: -0.5,
   },
   searchRow: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    gap: 10,
-    marginBottom: 16,
+    gap: 12,
+    marginBottom: 20,
   },
   searchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    height: 48,
-    borderRadius: 24,
+    gap: 12,
+    paddingHorizontal: 16,
+    height: 52,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.borderLight,
-    overflow: 'hidden',
+    backgroundColor: COLORS.bgDark,
   },
   searchInput: {
     flex: 1,
     color: '#fff',
-    fontSize: 15,
+    fontSize: 16,
+    fontWeight: '500',
   },
   filterBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: COLORS.bgDark,
     borderWidth: 1,
     borderColor: COLORS.borderLight,
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative'
   },
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    top: -4,
+    right: -4,
     backgroundColor: COLORS.rosePrimary,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
-    borderWidth: 1.5,
+    borderWidth: 2.5,
     borderColor: COLORS.bgBase,
+    elevation: 4,
   },
   badgeText: {
     color: '#fff',
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
   categoriesRow: {
     paddingHorizontal: 20,
-    gap: 8,
+    gap: 10,
+    paddingBottom: 4,
   },
   categoryPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: COLORS.bgDark,
     borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    justifyContent: 'center'
+    borderColor: COLORS.borderLight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   categoryPillActive: {
     backgroundColor: COLORS.rosePrimary,
     borderColor: COLORS.rosePrimary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
   categoryText: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 14,
+    fontWeight: '700',
   },
   categoryTextActive: {
     color: '#fff',

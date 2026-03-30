@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import firestore, { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  onSnapshot,
   orderBy,
   limit,
-  getDocs,
 } from '@react-native-firebase/firestore';
 import { LikeDocument } from '../types/user';
 
-const db = firestore();
+const db = getFirestore();
 
 /**
  * useLikes.ts
@@ -26,9 +26,9 @@ export function useLikes(uid: string | null | undefined) {
 
   useEffect(() => {
     if (!uid) {
-      setIncomingLikes([]);
-      setOutgoingLikes([]);
-      setIsLoading(false);
+      setIncomingLikes((prev) => (prev.length === 0 ? prev : []));
+      setOutgoingLikes((prev) => (prev.length === 0 ? prev : []));
+      setIsLoading((prev) => (prev ? false : prev));
       return;
     }
 

@@ -10,12 +10,13 @@ import {
   Bell, Grid3X3, Search as SearchIcon, MapPin, Check,
   Gift, ArrowLeftRight, Star, Users,
 } from 'lucide-react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useRouter } from 'expo-router';
 import type { RootState } from '../../src/store';
 import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
 import { useNotifications } from '../../src/hooks/useNotifications';
 import { likeUser } from '../../src/services/matchingService';
+import { removeFeedItem, recordSwipeData } from '../../src/store/discoverySlice';
 import UserAvatar from '../../src/components/UserAvatar';
 import type { UserDocument } from '../../src/types/user';
 
@@ -26,7 +27,6 @@ const CARD_GAP = 16;
 const SNAP_WIDTH = CARD_WIDTH + CARD_GAP;
 const SIDE_PADDING = (width - CARD_WIDTH) / 2;
 
-// Color Theme
 const COLORS = {
   rosePrimary: '#ff1a5c',
   roseLight: '#ff4d7a',
@@ -50,7 +50,6 @@ const COLORS = {
   warningBg: 'rgba(245, 158, 11, 0.2)',
 };
 
-// Category filter pills
 const categories = ['All', 'Tech', 'Music', 'Art', 'Language', 'Sports'];
 
 const CATEGORY_SKILL_MAP: Record<string, string[]> = {
@@ -61,15 +60,21 @@ const CATEGORY_SKILL_MAP: Record<string, string[]> = {
   Sports: ['yoga', 'dance', 'football', 'cricket', 'swimming'],
 };
 
-// ── Animated Card ──
 interface AnimatedCardProps {
   person: UserDocument;
   index: number;
   scrollX: Animated.Value;
   onProposeSwap: () => void;
+  isSubmitting: boolean;
 }
 
-function AnimatedCard({ person, index, scrollX, onProposeSwap }: AnimatedCardProps) {
+function AnimatedCard({
+  person,
+  index,
+  scrollX,
+  onProposeSwap,
+  isSubmitting,
+}: AnimatedCardProps) {
   const inputRange = [
     (index - 1) * SNAP_WIDTH,
     index * SNAP_WIDTH,
@@ -84,7 +89,6 @@ function AnimatedCard({ person, index, scrollX, onProposeSwap }: AnimatedCardPro
   return (
     <Animated.View style={[styles.cardContainer, { transform: [{ rotate }, { scale }, { translateY }], opacity }]}>
       <View style={styles.personCard}>
-        {/* Full-size avatar fills the card */}
         <UserAvatar
           photoURL={person.photoURL}
           displayName={person.displayName}
@@ -128,8 +132,15 @@ function AnimatedCard({ person, index, scrollX, onProposeSwap }: AnimatedCardPro
             </View>
           </View>
 
-          <TouchableOpacity style={styles.proposeBtn} onPress={onProposeSwap} activeOpacity={0.85}>
-            <Text style={styles.proposeBtnText}>Propose Swap ✨</Text>
+          <TouchableOpacity
+            style={[styles.proposeBtn, isSubmitting && styles.proposeBtnDisabled]}
+            onPress={onProposeSwap}
+            activeOpacity={0.85}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.proposeBtnText}>
+              {isSubmitting ? 'Sending...' : 'Propose Swap ✨'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -137,7 +148,6 @@ function AnimatedCard({ person, index, scrollX, onProposeSwap }: AnimatedCardPro
   );
 }
 
-// ── Skeleton Card ──
 function SkeletonCard({ index, scrollX }: { index: number; scrollX: Animated.Value }) {
   const inputRange = [(index - 1) * SNAP_WIDTH, index * SNAP_WIDTH, (index + 1) * SNAP_WIDTH];
   const scale = scrollX.interpolate({ inputRange, outputRange: [0.92, 1, 0.92], extrapolate: 'clamp' });
@@ -148,27 +158,27 @@ function SkeletonCard({ index, scrollX }: { index: number; scrollX: Animated.Val
   );
 }
 
-// ── HomeScreen ──
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const dispatch = useDispatch();
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [submittingTargetUids, setSubmittingTargetUids] = useState<Record<string, boolean>>({});
   const scrollX = useRef(new Animated.Value(0)).current;
 
-  // Real data from Redux/Firestore
   const authUser = useSelector((s: RootState) => s.auth.user);
-  const { users: fetchedUsers, loading, removeUserFromFeed, recordSwipe } = useDiscoveryFeed(authUser?.uid || null);
-  const { unreadCount, notifications } = useNotifications();
-  
-  // Debug logging
-  console.log('[Home] unreadCount:', unreadCount, 'notifications:', notifications.length);
+  // Prefer the live Firestore profile for photoURL (updated after profile-setup)
+  const firestoreProfile = useSelector((s: RootState) => s.profile.profile);
+  const displayPhoto = firestoreProfile?.photoURL ?? authUser?.photoURL ?? null;
+  const displayName = firestoreProfile?.displayName ?? authUser?.displayName ?? null;
+  const { users: fetchedUsers, loading } = useDiscoveryFeed(authUser?.uid || null);
+  const { unreadCount } = useNotifications();
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { x: scrollX } } }],
     { useNativeDriver: true },
   );
 
-  // Client-side category filter
   const filteredUsers = selectedCategory === 'All'
     ? fetchedUsers
     : fetchedUsers.filter((u) =>
@@ -180,17 +190,19 @@ export default function HomeScreen() {
       );
 
   const handleProposeSwap = async (toUser: UserDocument) => {
-    if (!authUser) return;
-    try {
-      // Create a "like" in the backend. If mutual, returns a MatchDocument.
-      // Optimistic UI: Remove them from the local feed instantly.
-      removeUserFromFeed(toUser.uid);
-      recordSwipe(toUser.uid);
+    if (!authUser || submittingTargetUids[toUser.uid]) return;
 
+    setSubmittingTargetUids((prev) => ({
+      ...prev,
+      [toUser.uid]: true,
+    }));
+
+    try {
       const match = await likeUser(authUser.uid, toUser.uid);
+      dispatch(recordSwipeData({ targetUid: toUser.uid, type: 'like' }));
+      dispatch(removeFeedItem(toUser.uid));
 
       if (match) {
-        // Mutual match!
         router.push({
           pathname: '/match-celebration',
           params: { matchId: match.id, targetUid: toUser.uid, targetName: toUser.displayName, targetPhoto: toUser.photoURL || '' },
@@ -200,6 +212,12 @@ export default function HomeScreen() {
       }
     } catch (e) {
       Alert.alert('Error', 'Could not send request. Please try again.');
+    } finally {
+      setSubmittingTargetUids((prev) => {
+        const next = { ...prev };
+        delete next[toUser.uid];
+        return next;
+      });
     }
   };
 
@@ -207,12 +225,11 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: COLORS.bgBase }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
 
-        {/* ── Header ── */}
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <View style={styles.headerLeft}>
             <UserAvatar
-              photoURL={authUser?.photoURL}
-              displayName={authUser?.displayName}
+              photoURL={displayPhoto}
+              displayName={displayName}
               uid={authUser?.uid}
               size={42}
             />
@@ -222,22 +239,20 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity 
-              style={styles.iconBtn} 
-              onPress={() => router.push('/notifications')}
-            >
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications')}>
               <Bell color={COLORS.textSecondary} size={20} />
               {unreadCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn}><Grid3X3 color={COLORS.textSecondary} size={20} /></TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(tabs)/discover')}>
+              <Grid3X3 color={COLORS.textSecondary} size={20} />
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Search ── */}
         <View style={styles.searchRow}>
           <BlurView intensity={20} tint="dark" style={styles.searchBar}>
             <SearchIcon color={COLORS.textMuted} size={16} />
@@ -253,7 +268,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Categories ── */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -272,27 +286,25 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
-        {/* ── Quick Actions ── */}
         <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/discover')}>
             <Gift color={COLORS.rosePrimary} size={20} />
             <Text style={styles.actionText}>Offer Skill</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/matches')}>
             <ArrowLeftRight color={COLORS.rosePrimary} size={20} />
             <Text style={styles.actionText}>My Swaps</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── People Near You ── */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>People Near You</Text>
-          <TouchableOpacity><Text style={styles.seeAll}>See All</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/discover')}>
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Cards */}
         {loading ? (
-          // Loading skeletons
           <Animated.ScrollView
             horizontal
             scrollEnabled={false}
@@ -303,10 +315,8 @@ export default function HomeScreen() {
             ))}
           </Animated.ScrollView>
         ) : filteredUsers.length === 0 ? (
-          <View style={[styles.emptyState, { width: width - 40, height: CARD_HEIGHT * 0.8 }]}>
-            <View style={styles.emptyIconContainer}>
-              <Users color={COLORS.rosePrimary} size={32} />
-            </View>
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🌐</Text>
             <Text style={styles.emptyText}>No people here yet</Text>
             <Text style={styles.emptySubtext}>
               {selectedCategory === 'All'
@@ -330,13 +340,13 @@ export default function HomeScreen() {
                 person={person}
                 index={index}
                 scrollX={scrollX}
+                isSubmitting={Boolean(submittingTargetUids[person.uid])}
                 onProposeSwap={() => handleProposeSwap(person)}
               />
             ))}
           </Animated.ScrollView>
         )}
 
-        {/* ── Featured Skills ── */}
         <View style={[styles.sectionHeader, { marginTop: 32 }]}>
           <Text style={styles.sectionTitle}>Featured Skills</Text>
           <TouchableOpacity><Text style={styles.seeAll}>See All</Text></TouchableOpacity>
@@ -357,8 +367,6 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
-  // Header
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerText: {},
@@ -371,10 +379,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     position: 'relative',
   },
-  badge: {
+  notificationBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -2,
+    right: -2,
     backgroundColor: COLORS.rosePrimary,
     minWidth: 18,
     height: 18,
@@ -385,13 +393,11 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLORS.bgBase,
   },
-  badgeText: {
+  notificationBadgeText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
   },
-
-  // Search
   searchRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 16 },
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -406,8 +412,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.borderLight,
   },
   nearbyText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-
-  // Categories
   categoriesRow: { paddingHorizontal: 20, gap: 8, marginBottom: 20 },
   categoryPill: {
     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
@@ -417,8 +421,6 @@ const styles = StyleSheet.create({
   categoryPillActive: { backgroundColor: COLORS.rosePrimary, borderColor: COLORS.rosePrimary },
   categoryText: { color: COLORS.textMuted, fontSize: 13, fontWeight: '600' },
   categoryTextActive: { color: '#fff' },
-
-  // Quick Actions
   actionsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 28 },
   actionCard: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -427,13 +429,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.rose20,
   },
   actionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-
-  // Section header
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 16 },
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
   seeAll: { color: COLORS.rosePrimary, fontSize: 13, fontWeight: '600' },
-
-  // Card
   cardContainer: { width: CARD_WIDTH },
   personCard: { width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 24, overflow: 'hidden', backgroundColor: COLORS.bgDeep },
   cardImage: { width: CARD_WIDTH, height: CARD_HEIGHT, position: 'absolute', top: 0, left: 0, borderRadius: 24 },
@@ -449,7 +447,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   ratingNum: { color: COLORS.rosePrimary, fontSize: 12, fontWeight: '800' },
-
   skillsContainer: { gap: 8, marginBottom: 14 },
   skillRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   skillLabel: { color: COLORS.textMuted, fontSize: 12, width: 50 },
@@ -465,39 +462,18 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
   },
   learnText: { color: COLORS.textSecondary, fontSize: 13 },
-
   proposeBtn: {
     backgroundColor: COLORS.rosePrimary, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center',
   },
+  proposeBtnDisabled: {
+    opacity: 0.75,
+  },
   proposeBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-
-  // Empty state
-  emptyState: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    alignSelf: 'center', // center in ScrollView
-    marginVertical: 20,
-    paddingHorizontal: 30,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 26, 92, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 26, 92, 0.3)',
-    borderStyle: 'dashed',
-  },
-  emptyIconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255, 26, 92, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  emptyText: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  emptySubtext: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
-
-  // Featured Skills
+  emptyState: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
+  emptyEmoji: { fontSize: 48, marginBottom: 12 },
+  emptyText: { color: 'rgba(255,255,255,0.6)', fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  emptySubtext: { color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center', lineHeight: 18 },
   featuredRow: { paddingHorizontal: 20, gap: 10 },
   skillChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

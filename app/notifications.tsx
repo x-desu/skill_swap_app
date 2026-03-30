@@ -16,6 +16,7 @@ import { Bell, Trash2, ArrowLeft, MessageSquare, Handshake, Info, ShieldAlert } 
 import { useNotifications } from '../src/hooks/useNotifications';
 import { AppNotification } from '../src/types/user';
 import { openNotificationDestination } from '../src/services/notificationService';
+
 // Color Theme matching home.tsx
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -28,6 +29,20 @@ const COLORS = {
   textPrimary: '#ffffff',
   textSecondary: 'rgba(255, 255, 255, 0.7)',
   textMuted: 'rgba(255, 255, 255, 0.4)',
+};
+
+const formatNotificationTime = (createdAt: AppNotification['createdAt']) => {
+  if (!createdAt) return 'Just now';
+  if (typeof createdAt === 'number') {
+    return new Date(createdAt).toLocaleString();
+  }
+  if (createdAt instanceof Date) {
+    return createdAt.toLocaleString();
+  }
+  if (typeof createdAt === 'object' && typeof createdAt.toMillis === 'function') {
+    return new Date(createdAt.toMillis()).toLocaleString();
+  }
+  return 'Just now';
 };
 
 type NotificationRowProps = {
@@ -106,9 +121,7 @@ function NotificationRow({
           <View style={styles.content}>
             <Text style={[styles.title, !item.read && styles.unreadTitle]}>{item.title}</Text>
             <Text style={styles.body} numberOfLines={2}>{item.body}</Text>
-            <Text style={styles.timeText}>
-              {item.createdAt ? new Date(item.createdAt.toMillis()).toLocaleString() : 'Just now'}
-            </Text>
+            <Text style={styles.timeText}>{formatNotificationTime(item.createdAt)}</Text>
           </View>
         </View>
 
@@ -129,13 +142,9 @@ export default function NotificationsScreen() {
       await markAsRead(notification.id);
     }
 
-    if (notification.type === 'new_match' || notification.type === 'new_message') {
-      const opened = openNotificationDestination(notification.data);
-      if (opened) {
-        return;
-      }
-    } else if (notification.type === 'swap_request') {
-      router.push('/(tabs)/matches');
+    const opened = openNotificationDestination(notification);
+    if (opened) {
+      return;
     }
   };
 
