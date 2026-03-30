@@ -26,9 +26,9 @@ export function useLikes(uid: string | null | undefined) {
 
   useEffect(() => {
     if (!uid) {
-      setIncomingLikes([]);
-      setOutgoingLikes([]);
-      setIsLoading(false);
+      setIncomingLikes((prev) => (prev.length === 0 ? prev : []));
+      setOutgoingLikes((prev) => (prev.length === 0 ? prev : []));
+      setIsLoading((prev) => (prev ? false : prev));
       return;
     }
 

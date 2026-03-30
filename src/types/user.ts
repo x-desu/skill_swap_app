@@ -103,6 +103,41 @@ export interface MatchDocument {
   lastMessageTime?: Timestamp;
 }
 
+// ─── Video Calls (Chat-integrated MVP) ───────────────────────────────────────
+
+export type VideoCallStatus =
+  | 'ringing'
+  | 'accepted'
+  | 'declined'
+  | 'cancelled'
+  | 'ended'
+  | 'missed';
+
+export interface VideoCallParticipant {
+  uid: string;
+  displayName: string;
+  photoURL?: string | null;
+}
+
+export interface VideoCallDocument {
+  id: string;
+  matchId: string;
+  streamCallId: string;
+  streamCallType: string;
+  initiatedFrom: 'chat';
+  callerUid: string;
+  calleeUid: string;
+  participantUids: string[];
+  caller: VideoCallParticipant;
+  callee: VideoCallParticipant;
+  status: VideoCallStatus;
+  acceptedAt?: Timestamp | number | Date | null;
+  endedAt?: Timestamp | number | Date | null;
+  endedByUid?: string | null;
+  createdAt: Timestamp | number | Date | null;
+  updatedAt: Timestamp | number | Date | null;
+}
+
 // ─── Chat System (Phase 1) ────────────────────────────────────────────────────
 
 // Maps directly to react-native-gifted-chat IMessage interface

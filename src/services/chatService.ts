@@ -9,9 +9,52 @@ import {
   onSnapshot,
   serverTimestamp,
 } from '@react-native-firebase/firestore';
+import { getAuth } from '@react-native-firebase/auth';
+import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
 import { MessageDocument } from '../types/user';
 
 const db = getFirestore();
+const FUNCTIONS_REGION = 'asia-south1';
+const functions = () => getFunctions(undefined, FUNCTIONS_REGION);
+
+type DeleteChatThreadResponse = {
+  deleted: boolean;
+  matchId: string;
+};
+
+type RequestSource = 'like' | 'swap_request';
+
+type RequestActionResponse = {
+  source: RequestSource;
+  sourceId: string;
+  status: 'accepted' | 'declined' | 'completed' | 'pending';
+  matchId?: string;
+};
+
+function isUnauthenticatedCallableError(error: unknown): boolean {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+  } | null;
+
+  return (
+    maybeError?.code === 'functions/unauthenticated' ||
+    maybeError?.code === 'unauthenticated' ||
+    maybeError?.message === 'UNAUTHENTICATED' ||
+    maybeError?.details === 'UNAUTHENTICATED'
+  );
+}
+
+async function ensureFunctionsAuthReady(forceRefresh = false): Promise<void> {
+  const currentUser = getAuth().currentUser;
+
+  if (!currentUser) {
+    throw new Error('Your session is still loading. Please try again in a moment.');
+  }
+
+  await currentUser.getIdToken(forceRefresh);
+}
 
 /**
  * Sends a new message in a specific match conversation.
@@ -106,3 +149,52 @@ export const listenToMessages = (
       console.error('[ChatService] Messages listener error:', error);
     });
 };
+
+export const deleteChatThread = async (matchId: string): Promise<DeleteChatThreadResponse> => {
+  await ensureFunctionsAuthReady(false);
+  const callable = httpsCallable(functions(), 'deleteChatThread');
+
+  try {
+    const result = await callable({ matchId });
+    return result.data as DeleteChatThreadResponse;
+  } catch (error) {
+    if (!isUnauthenticatedCallableError(error)) {
+      throw error;
+    }
+
+    await ensureFunctionsAuthReady(true);
+    const retryResult = await callable({ matchId });
+    return retryResult.data as DeleteChatThreadResponse;
+  }
+};
+
+async function callRequestAction(
+  name: 'acceptRequest' | 'declineRequest',
+  params: { source: RequestSource; sourceId: string },
+): Promise<RequestActionResponse> {
+  await ensureFunctionsAuthReady(false);
+  const callable = httpsCallable(functions(), name);
+
+  try {
+    const result = await callable(params);
+    return result.data as RequestActionResponse;
+  } catch (error) {
+    if (!isUnauthenticatedCallableError(error)) {
+      throw error;
+    }
+
+    await ensureFunctionsAuthReady(true);
+    const retryResult = await callable(params);
+    return retryResult.data as RequestActionResponse;
+  }
+}
+
+export const acceptRequest = (params: {
+  source: RequestSource;
+  sourceId: string;
+}): Promise<RequestActionResponse> => callRequestAction('acceptRequest', params);
+
+export const declineRequest = (params: {
+  source: RequestSource;
+  sourceId: string;
+}): Promise<RequestActionResponse> => callRequestAction('declineRequest', params);

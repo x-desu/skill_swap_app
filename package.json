@@ -9,10 +9,12 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "^13.0.0",
     "@gluestack-ui/nativewind-utils": "^1.0.28",
     "@gorhom/bottom-sheet": "^5.2.8",
     "@invertase/react-native-apple-authentication": "^2.5.1",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/netinfo": "11.4.1",
     "@react-native-community/slider": "5.0.1",
     "@react-native-firebase/app": "^23.8.8",
     "@react-native-firebase/auth": "^23.8.8",
@@ -22,6 +24,8 @@
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/native": "^7.2.2",
     "@reduxjs/toolkit": "^2.11.2",
+    "@stream-io/react-native-webrtc": "^137.1.2",
+    "@stream-io/video-react-native-sdk": "^1.30.5",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "expo": "~54.0.32",

@@ -41,6 +41,7 @@ const crypto = __importStar(require("crypto"));
 const Razorpay = require('razorpay');
 const razorpayKeyId = (0, params_1.defineSecret)('RAZORPAY_KEY_ID');
 const razorpayKeySecret = (0, params_1.defineSecret)('RAZORPAY_KEY_SECRET');
+const razorpayWebhookSecret = (0, params_1.defineSecret)('RAZORPAY_WEBHOOK_SECRET');
 /**
  * Create a Razorpay Order
  * Callable from Expo app
@@ -117,12 +118,11 @@ exports.verifyRazorpayPayment = (0, https_1.onCall)({ region: 'asia-south1', sec
         // Update User Profile (Credits + Premium status)
         const userRef = db.collection('users').doc(userId);
         await db.runTransaction(async (transaction) => {
-            var _a;
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists) {
                 throw new Error('User document not found');
             }
-            const currentCredits = ((_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.credits) || 0;
+            const currentCredits = userDoc.data()?.credits || 0;
             const nextCredits = currentCredits + creditsNumber;
             transaction.update(userRef, {
                 credits: nextCredits,
@@ -167,23 +167,32 @@ exports.verifyRazorpayPayment = (0, https_1.onCall)({ region: 'asia-south1', sec
  * Razorpay Webhook
  * HTTPS Request from Razorpay
  */
-exports.razorpayWebhook = (0, https_1.onRequest)({ region: 'asia-south1', secrets: [razorpayKeySecret] }, async (req, res) => {
-    // In production, you MUST verify the webhook signature
-    // const secret = 'YOUR_WEBHOOK_SECRET';
-    // const signature = req.headers['x-razorpay-signature'];
-    var _a, _b, _c;
+exports.razorpayWebhook = (0, https_1.onRequest)({ region: 'asia-south1', secrets: [razorpayKeySecret, razorpayWebhookSecret] }, async (req, res) => {
+    // Verify webhook signature
+    const signature = req.headers['x-razorpay-signature'];
+    const body = JSON.stringify(req.body);
+    const expectedSignature = crypto
+        .createHmac('sha256', razorpayWebhookSecret.value())
+        .update(body)
+        .digest('hex');
+    if (signature !== expectedSignature) {
+        console.error('[Razorpay Webhook] Invalid signature');
+        res.status(400).send('Invalid signature');
+        return;
+    }
+    console.log('[Razorpay Webhook] Signature verified');
     const event = req.body;
     const db = admin.firestore();
     if (event.event === 'payment.captured') {
         const payment = event.payload.payment.entity;
-        const userId = (_a = payment.notes) === null || _a === void 0 ? void 0 : _a.userId;
-        const credits = parseInt(((_b = payment.notes) === null || _b === void 0 ? void 0 : _b.credits) || '0');
+        const userId = payment.notes?.userId;
+        const credits = parseInt(payment.notes?.credits || '0');
         if (userId && credits > 0) {
             console.log(`[Razorpay Webhook] Processing captured payment for user ${userId}`);
             const userRef = db.collection('users').doc(userId);
             const userDoc = await userRef.get();
             if (userDoc.exists) {
-                const currentCredits = ((_c = userDoc.data()) === null || _c === void 0 ? void 0 : _c.credits) || 0;
+                const currentCredits = userDoc.data()?.credits || 0;
                 // Ensure idempotency by checking if payment was already processed
                 const paymentRef = db.collection('payments').doc(payment.id);
                 const paymentDoc = await paymentRef.get();

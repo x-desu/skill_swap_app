@@ -72,7 +72,9 @@
           "locationAlwaysAndWhenInUsePermission": "SkillSwap needs access to your location to automatically determine your city and country."
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      "@stream-io/video-react-native-sdk",
+      "@config-plugins/react-native-webrtc"
     ],
     "extra": {
       "razorpayKeyId": "rzp_live_SX039qZ9OOIngV"

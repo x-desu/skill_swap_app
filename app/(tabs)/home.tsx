@@ -10,12 +10,13 @@ import {
   Bell, Grid3X3, Search as SearchIcon, MapPin, Check,
   Gift, ArrowLeftRight, Star, Users,
 } from 'lucide-react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useRouter } from 'expo-router';
 import type { RootState } from '../../src/store';
 import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
 import { useNotifications } from '../../src/hooks/useNotifications';
 import { likeUser } from '../../src/services/matchingService';
+import { removeFeedItem, recordSwipeData } from '../../src/store/discoverySlice';
 import UserAvatar from '../../src/components/UserAvatar';
 import type { UserDocument } from '../../src/types/user';
 
@@ -64,9 +65,16 @@ interface AnimatedCardProps {
   index: number;
   scrollX: Animated.Value;
   onProposeSwap: () => void;
+  isSubmitting: boolean;
 }
 
-function AnimatedCard({ person, index, scrollX, onProposeSwap }: AnimatedCardProps) {
+function AnimatedCard({
+  person,
+  index,
+  scrollX,
+  onProposeSwap,
+  isSubmitting,
+}: AnimatedCardProps) {
   const inputRange = [
     (index - 1) * SNAP_WIDTH,
     index * SNAP_WIDTH,
@@ -124,8 +132,15 @@ function AnimatedCard({ person, index, scrollX, onProposeSwap }: AnimatedCardPro
             </View>
           </View>
 
-          <TouchableOpacity style={styles.proposeBtn} onPress={onProposeSwap} activeOpacity={0.85}>
-            <Text style={styles.proposeBtnText}>Propose Swap ✨</Text>
+          <TouchableOpacity
+            style={[styles.proposeBtn, isSubmitting && styles.proposeBtnDisabled]}
+            onPress={onProposeSwap}
+            activeOpacity={0.85}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.proposeBtnText}>
+              {isSubmitting ? 'Sending...' : 'Propose Swap ✨'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -146,7 +161,9 @@ function SkeletonCard({ index, scrollX }: { index: number; scrollX: Animated.Val
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const dispatch = useDispatch();
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [submittingTargetUids, setSubmittingTargetUids] = useState<Record<string, boolean>>({});
   const scrollX = useRef(new Animated.Value(0)).current;
 
   const authUser = useSelector((s: RootState) => s.auth.user);
@@ -173,9 +190,17 @@ export default function HomeScreen() {
       );
 
   const handleProposeSwap = async (toUser: UserDocument) => {
-    if (!authUser) return;
+    if (!authUser || submittingTargetUids[toUser.uid]) return;
+
+    setSubmittingTargetUids((prev) => ({
+      ...prev,
+      [toUser.uid]: true,
+    }));
+
     try {
       const match = await likeUser(authUser.uid, toUser.uid);
+      dispatch(recordSwipeData({ targetUid: toUser.uid, type: 'like' }));
+      dispatch(removeFeedItem(toUser.uid));
 
       if (match) {
         router.push({
@@ -187,6 +212,12 @@ export default function HomeScreen() {
       }
     } catch (e) {
       Alert.alert('Error', 'Could not send request. Please try again.');
+    } finally {
+      setSubmittingTargetUids((prev) => {
+        const next = { ...prev };
+        delete next[toUser.uid];
+        return next;
+      });
     }
   };
 
@@ -309,6 +340,7 @@ export default function HomeScreen() {
                 person={person}
                 index={index}
                 scrollX={scrollX}
+                isSubmitting={Boolean(submittingTargetUids[person.uid])}
                 onProposeSwap={() => handleProposeSwap(person)}
               />
             ))}
@@ -433,6 +465,9 @@ const styles = StyleSheet.create({
   proposeBtn: {
     backgroundColor: COLORS.rosePrimary, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center',
+  },
+  proposeBtnDisabled: {
+    opacity: 0.75,
   },
   proposeBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   emptyState: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },

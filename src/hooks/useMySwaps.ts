@@ -7,7 +7,7 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch, RootState } from '../store';
-import { setSwapRequests } from '../store/usersSlice';
+import { clearSwapRequests, setSwapRequests } from '../store/usersSlice';
 import { listenToMySwapRequests } from '../services/firestoreService';
 
 export function useMySwaps() {
@@ -18,12 +18,15 @@ export function useMySwaps() {
   );
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid) {
+      dispatch(clearSwapRequests());
+      return;
+    }
     const unsubscribe = listenToMySwapRequests(uid, (incoming, outgoing) => {
       dispatch(setSwapRequests({ incoming, outgoing }));
     });
     return () => unsubscribe();
-  }, [uid]);
+  }, [dispatch, uid]);
 
   return {
     incoming: incomingSwaps,

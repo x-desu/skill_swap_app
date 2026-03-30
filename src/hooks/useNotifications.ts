@@ -17,8 +17,8 @@ export const useNotifications = () => {
 
   useEffect(() => {
     if (!user?.uid) {
-      setNotifications([]);
-      setIsLoading(false);
+      setNotifications((prev) => (prev.length === 0 ? prev : []));
+      setIsLoading((prev) => (prev ? false : prev));
       void setBadgeCount(0);
       return;
     }

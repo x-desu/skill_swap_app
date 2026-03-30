@@ -382,3 +382,12 @@ export const onMatchCreated = onDocumentCreated({
 export { revenueCatWebhook, seedNewUserCredits } from "./monetization";
 export { spendCredits } from "./spendCredits";
 export * from './payments';
+export {
+  acceptVideoCallInvite,
+  createVideoCallInvite,
+  declineVideoCallInvite,
+  endVideoCall,
+  getStreamVideoToken,
+} from './videoCalls';
+export { deleteChatThread } from './chatThreads';
+export { acceptRequest, declineRequest } from './requests';

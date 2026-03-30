@@ -22,8 +22,11 @@ const chatSlice = createSlice({
     clearChat: (state) => {
       state.rooms = {};
     },
+    removeRoomMessages: (state, action: PayloadAction<string>) => {
+      delete state.rooms[action.payload];
+    },
   },
 });
 
-export const { setRoomMessages, clearChat } = chatSlice.actions;
+export const { setRoomMessages, clearChat, removeRoomMessages } = chatSlice.actions;
 export default chatSlice.reducer;

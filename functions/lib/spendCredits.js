@@ -39,24 +39,22 @@ const admin = __importStar(require("firebase-admin"));
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 exports.spendCredits = (0, https_1.onCall)({ region: 'asia-south1' }, async (request) => {
-    var _a, _b, _c, _d;
-    if (!((_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+    if (!request.auth?.uid) {
         throw new https_1.HttpsError('unauthenticated', 'Sign in required');
     }
     const uid = request.auth.uid;
-    const amount = Number((_b = request.data) === null || _b === void 0 ? void 0 : _b.amount);
-    const reason = String((_d = (_c = request.data) === null || _c === void 0 ? void 0 : _c.reason) !== null && _d !== void 0 ? _d : 'credit_spend');
+    const amount = Number(request.data?.amount);
+    const reason = String(request.data?.reason ?? 'credit_spend');
     if (!Number.isFinite(amount) || amount <= 0) {
         throw new https_1.HttpsError('invalid-argument', 'Invalid amount');
     }
     await db.runTransaction(async (tx) => {
-        var _a, _b;
         const userRef = db.collection('users').doc(uid);
         const userSnap = await tx.get(userRef);
         if (!userSnap.exists) {
             throw new https_1.HttpsError('failed-precondition', 'User profile missing');
         }
-        const cur = (_b = (_a = userSnap.data()) === null || _a === void 0 ? void 0 : _a.credits) !== null && _b !== void 0 ? _b : 0;
+        const cur = userSnap.data()?.credits ?? 0;
         if (cur < amount) {
             throw new https_1.HttpsError('failed-precondition', 'Insufficient credits');
         }

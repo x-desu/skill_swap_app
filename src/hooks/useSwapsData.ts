@@ -3,11 +3,13 @@ import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import type {
   AppNotification,
+  LikeDocument,
   MatchDocument,
   SwapRequest,
   UserDocument,
 } from '../types/user';
 import { getUserProfile } from '../services/firestoreService';
+import { useLikes } from './useLikes';
 import { useMySwaps } from './useMySwaps';
 import { useNotifications } from './useNotifications';
 
@@ -27,6 +29,10 @@ export interface SwapMessageRow {
 export interface SwapRequestRow {
   id: string;
   direction: 'incoming' | 'outgoing';
+  source: 'like' | 'swap_request';
+  sourceId: string;
+  fromUid: string;
+  toUid: string;
   targetUid: string;
   title: string;
   photoURL: string | null;
@@ -34,6 +40,8 @@ export interface SwapRequestRow {
   summary: string;
   status: string;
   timestamp: number;
+  canAccept: boolean;
+  canDecline: boolean;
 }
 
 const toMillis = (value: unknown): number => {
@@ -71,6 +79,10 @@ const buildRequestRow = (
   return {
     id: swap.id || `${direction}-${targetUid}-${toMillis(swap.createdAt)}`,
     direction,
+    source: 'swap_request',
+    sourceId: swap.id || `${direction}-${targetUid}-${toMillis(swap.createdAt)}`,
+    fromUid: swap.fromUid,
+    toUid: swap.toUid,
     targetUid,
     title: displayName,
     photoURL,
@@ -78,23 +90,68 @@ const buildRequestRow = (
     summary: `${swap.offeredSkill} for ${swap.wantedSkill}`,
     status: swap.status,
     timestamp: toMillis(swap.updatedAt) || toMillis(swap.createdAt),
+    canAccept: direction === 'incoming' && swap.status === 'pending',
+    canDecline: direction === 'incoming' && swap.status === 'pending',
   };
+};
+
+const buildLikeRequestRow = (
+  like: LikeDocument,
+  direction: 'incoming' | 'outgoing',
+  profile: UserDocument | null | undefined,
+): SwapRequestRow => {
+  const isIncoming = direction === 'incoming';
+  const targetUid = isIncoming ? like.fromUid : like.toUid;
+  const displayName = profile?.displayName || 'SkillSwap User';
+
+  return {
+    id: `like-${like.id || `${direction}-${targetUid}-${toMillis(like.createdAt)}`}`,
+    direction,
+    source: 'like',
+    sourceId: like.id || `${direction}-${targetUid}-${toMillis(like.createdAt)}`,
+    fromUid: like.fromUid,
+    toUid: like.toUid,
+    targetUid,
+    title: displayName,
+    photoURL: profile?.photoURL ?? null,
+    message: isIncoming
+      ? `${displayName} wants to swap skills with you.`
+      : `Waiting for ${displayName} to respond to your swap request.`,
+    summary: 'Skill swap request',
+    status: 'pending',
+    timestamp: toMillis(like.createdAt),
+    canAccept: direction === 'incoming',
+    canDecline: direction === 'incoming',
+  };
+};
+
+const dedupeRequestRows = (rows: SwapRequestRow[]): SwapRequestRow[] => {
+  const seen = new Set<string>();
+
+  return [...rows]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .filter((row) => {
+      const key = `${row.direction}:${row.targetUid}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
 };
 
 export function useSwapsData() {
   const authUser = useSelector((state: RootState) => state.auth.user);
   const matches = useSelector((state: RootState) => state.matches.list);
   const hasLoadedOnce = useSelector((state: RootState) => state.matches.hasLoadedOnce);
-  const { incoming, outgoing, isLoading: swapsLoading } = useMySwaps();
+  const { incoming, outgoing } = useMySwaps();
+  const { pendingIncoming, pendingOutgoing } = useLikes(authUser?.uid);
   const { notifications, unreadCount } = useNotifications();
   const [profiles, setProfiles] = useState<Record<string, UserDocument | null>>({});
-  const [profilesLoading, setProfilesLoading] = useState(false);
 
-  useEffect(() => {
+  const requiredProfileUids = useMemo(() => {
     if (!authUser?.uid) {
-      setProfiles({});
-      setProfilesLoading(false);
-      return;
+      return [];
     }
 
     const neededUids = new Set<string>();
@@ -106,12 +163,24 @@ export function useSwapsData() {
 
     incoming.forEach((swap) => neededUids.add(swap.fromUid));
     outgoing.forEach((swap) => neededUids.add(swap.toUid));
+    pendingIncoming.forEach((like) => neededUids.add(like.fromUid));
+    pendingOutgoing.forEach((like) => neededUids.add(like.toUid));
 
-    const missingUids = [...neededUids].filter((uid) => !(uid in profiles));
+    return [...neededUids].sort();
+  }, [authUser?.uid, incoming, matches, outgoing, pendingIncoming, pendingOutgoing]);
+
+  const requiredProfileKey = requiredProfileUids.join('|');
+
+  useEffect(() => {
+    if (!authUser?.uid) {
+      setProfiles((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
+    }
+
+    const missingUids = requiredProfileUids.filter((uid) => !(uid in profiles));
     if (missingUids.length === 0) return;
 
     let cancelled = false;
-    setProfilesLoading(true);
 
     Promise.all(
       missingUids.map(async (uid) => {
@@ -127,20 +196,23 @@ export function useSwapsData() {
       if (cancelled) return;
 
       setProfiles((prev) => {
+        let changed = false;
         const next = { ...prev };
         entries.forEach(([uid, profile]) => {
+          if (next[uid] === profile) {
+            return;
+          }
           next[uid] = profile;
+          changed = true;
         });
-        return next;
+        return changed ? next : prev;
       });
-      setProfilesLoading(false);
     });
 
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser?.uid, matches, incoming, outgoing]);
+  }, [authUser?.uid, requiredProfileKey]);
 
   const latestNotificationByMatchId = useMemo(() => {
     return notifications.reduce<Record<string, AppNotification>>((acc, notification) => {
@@ -192,14 +264,30 @@ export function useSwapsData() {
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [authUser?.uid, latestNotificationByMatchId, matches, profiles, unreadByMatchId]);
 
+  const matchedPairKeys = useMemo(() => {
+    return new Set(
+      matches.map((match) => [...match.users].sort().join(':')),
+    );
+  }, [matches]);
+
   const requestRows = useMemo<SwapRequestRow[]>(() => {
     const combined = [
-      ...incoming.map((swap) => buildRequestRow(swap, 'incoming', profiles[swap.fromUid])),
-      ...outgoing.map((swap) => buildRequestRow(swap, 'outgoing', profiles[swap.toUid])),
+      ...incoming
+        .filter((swap) => swap.status === 'pending')
+        .map((swap) => buildRequestRow(swap, 'incoming', profiles[swap.fromUid])),
+      ...outgoing
+        .filter((swap) => swap.status === 'pending')
+        .map((swap) => buildRequestRow(swap, 'outgoing', profiles[swap.toUid])),
+      ...pendingIncoming.map((like) => buildLikeRequestRow(like, 'incoming', profiles[like.fromUid])),
+      ...pendingOutgoing.map((like) => buildLikeRequestRow(like, 'outgoing', profiles[like.toUid])),
     ];
 
-    return combined.sort((a, b) => b.timestamp - a.timestamp);
-  }, [incoming, outgoing, profiles]);
+    const pendingOnly = combined.filter(
+      (row) => !matchedPairKeys.has([row.fromUid, row.toUid].sort().join(':')),
+    );
+
+    return dedupeRequestRows(pendingOnly);
+  }, [incoming, outgoing, pendingIncoming, pendingOutgoing, profiles, matchedPairKeys]);
 
   // Only show the global spinner until the matches listener has resolved at least once.
   // swapsLoading (swap requests) is allowed to load independently — don't block Messages on it.

@@ -83,6 +83,17 @@ service cloud.firestore {
       }
     }
 
+    // ─── calls/{id} ──────────────────────────────────────────────────────────
+    // Call documents are server-managed. Clients can only read if they
+    // participate in the chat/video session.
+    match /calls/{id} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.callerUid ||
+        request.auth.uid == resource.data.calleeUid
+      );
+      allow write: if false;
+    }
+
     // ─── Deny all other paths ─────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

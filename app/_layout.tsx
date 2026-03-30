@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { Provider, useDispatch } from 'react-redux';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { store } from '../src/store';
 import { setUser, setProfileComplete, setAppLoading } from '../src/store/authSlice';
 import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
@@ -16,6 +17,7 @@ import {
   setupNotificationListeners,
 } from '../src/services/notificationService';
 import DataProvider from '../src/components/DataProvider';
+import IncomingCallBanner from '../src/components/IncomingCallBanner';
 import '../global.css';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
@@ -149,6 +151,15 @@ function AppNavigator() {
         options={{ headerShown: false, title: 'Chat', animation: 'slide_from_right' }}
       />
       <Stack.Screen
+        name="call/[id]"
+        options={{
+          headerShown: false,
+          title: 'Call',
+          animation: 'slide_from_right',
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
         name="settings"
         options={{ headerShown: false, presentation: 'modal' }}
       />
@@ -158,14 +169,17 @@ function AppNavigator() {
 
 export default function RootLayout() {
   return (
-    <Provider store={store}>
-      <GluestackUIProvider mode="dark">
-        <ThemeProvider>
-          <DataProvider>
-            <AppNavigator />
-          </DataProvider>
-        </ThemeProvider>
-      </GluestackUIProvider>
-    </Provider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Provider store={store}>
+        <GluestackUIProvider mode="dark">
+          <ThemeProvider>
+            <DataProvider>
+              <AppNavigator />
+              <IncomingCallBanner />
+            </DataProvider>
+          </ThemeProvider>
+        </GluestackUIProvider>
+      </Provider>
+    </GestureHandlerRootView>
   );
 }

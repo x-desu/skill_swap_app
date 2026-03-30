@@ -33,6 +33,7 @@ import { markNotificationsForMatchAsRead } from '../../src/services/notification
 import type { MessageDocument } from '../../src/types/user';
 import UserAvatar from '../../src/components/UserAvatar';
 import { useUserPresence, formatLastActive } from '../../src/hooks/useUserPresence';
+import { createVideoCallInvite } from '../../src/services/videoCallService';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -97,6 +98,7 @@ export default function ChatRoomScreen() {
   const roomSelector = useMemo(() => selectRoomMessages(matchId), [matchId]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [isStartingVideoCall, setIsStartingVideoCall] = useState(false);
   const giftedChatRef = useRef<any>(null);
   const storedMessages = useSelector(roomSelector);
   const [messages, setMessages] = useState<MessageDocument[]>(storedMessages);
@@ -195,7 +197,39 @@ export default function ChatRoomScreen() {
   };
 
   const handleVideoPress = () => {
-    Alert.alert('Video Call', `Video calling ${targetName} is coming soon!`);
+    if (!matchId || !targetUid) {
+      Alert.alert('Video Call', 'This chat is missing the match details needed to start a call.');
+      return;
+    }
+
+    if (isStartingVideoCall) {
+      return;
+    }
+
+    const startVideoCall = async () => {
+      try {
+        setIsStartingVideoCall(true);
+        const result = await createVideoCallInvite({
+          matchId,
+          calleeUid: targetUid,
+        });
+
+        router.push({
+          pathname: '/call/[id]',
+          params: { id: result.callId },
+        });
+      } catch (error: any) {
+        console.error('[Chat] Failed to start video call:', error);
+        Alert.alert(
+          'Unable to start call',
+          error?.message || `Couldn’t start a video call with ${targetName}.`,
+        );
+      } finally {
+        setIsStartingVideoCall(false);
+      }
+    };
+
+    void startVideoCall();
   };
 
   const handleMorePress = () => {
@@ -289,8 +323,12 @@ export default function ChatRoomScreen() {
         <TouchableOpacity onPress={handleCallPress} style={styles.headerActionBtn}>
           <Phone color="#fff" size={20} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleVideoPress} style={styles.headerActionBtn}>
-          <Video color="#fff" size={22} />
+        <TouchableOpacity
+          onPress={handleVideoPress}
+          style={[styles.headerActionBtn, isStartingVideoCall && styles.headerActionBtnDisabled]}
+          disabled={isStartingVideoCall}
+        >
+          <Video color={isStartingVideoCall ? 'rgba(255,255,255,0.45)' : '#fff'} size={22} />
         </TouchableOpacity>
         <TouchableOpacity onPress={handleMorePress} style={styles.headerActionBtn}>
           <MoreVertical color="#fff" size={22} />
@@ -448,6 +486,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
+  },
+  headerActionBtnDisabled: {
+    opacity: 0.7,
   },
   avatarWrap: {
     position: 'relative',

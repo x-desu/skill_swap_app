@@ -45,6 +45,11 @@ const usersSlice = createSlice({
     setSwapsLoading(state, action: PayloadAction<boolean>) {
       state.swapsLoading = action.payload;
     },
+    clearSwapRequests(state) {
+      state.incomingSwaps = [];
+      state.outgoingSwaps = [];
+      state.swapsLoading = false;
+    },
   },
 });
 
@@ -54,6 +59,7 @@ export const {
   setSelectedUser,
   setSwapRequests,
   setSwapsLoading,
+  clearSwapRequests,
 } = usersSlice.actions;
 
 export default usersSlice.reducer;
