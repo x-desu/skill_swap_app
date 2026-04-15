@@ -412,23 +412,15 @@ export default function ChatRoomScreen() {
   const renderBubble = useCallback((props: any) => {
     const cm = props?.currentMessage;
     if (!cm?.user?._id) return null;
-    // Outer TouchableOpacity acts as a safe fallback long-press handler
-    // in case GiftedChat's Bubble consumes the touch before surfacing onLongPress.
     return (
-      <TouchableOpacity
-        activeOpacity={1}
-        delayLongPress={400}
-        onLongPress={() => handleLongPressMessage(null, cm)}
-      >
-        <Bubble
-          {...props}
-          wrapperStyle={{ right: styles.bubbleRight, left: styles.bubbleLeft }}
-          textStyle={{ right: styles.bubbleTextRight, left: styles.bubbleTextLeft }}
-          timeTextStyle={{ right: styles.timeTextRight, left: styles.timeTextLeft }}
-          containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
-          onLongPress={handleLongPressMessage}
-        />
-      </TouchableOpacity>
+      <Bubble
+        {...props}
+        wrapperStyle={{ right: styles.bubbleRight, left: styles.bubbleLeft }}
+        textStyle={{ right: styles.bubbleTextRight, left: styles.bubbleTextLeft }}
+        timeTextStyle={{ right: styles.timeTextRight, left: styles.timeTextLeft }}
+        containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
+        onLongPress={handleLongPressMessage}
+      />
     );
   }, [handleLongPressMessage]);
 
