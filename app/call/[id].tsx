@@ -12,12 +12,18 @@ import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Phone, PhoneOff, Video } from 'lucide-react-native';
 import {
-  CallContent,
   CallingState,
+  FloatingParticipantView,
+  HangupCallButton,
+  ParticipantView,
   StreamCall,
   StreamVideo,
+  ToggleAudioPublishingButton,
+  ToggleCameraFaceButton,
+  ToggleVideoPublishingButton,
   type Call,
   type StreamVideoClient,
+  useCall,
   useCallStateHooks,
 } from '@stream-io/video-react-native-sdk';
 
@@ -36,14 +42,38 @@ import {
   ensureStreamVideoClient,
 } from '../../src/services/streamVideoService';
 
-type CallStatusCopy = {
-  title: string;
-  subtitle: string;
+// ─── Publish options ──────────────────────────────────────────────────────────
+// Passed to call.join() to force H.264 HW encoder, 720p target, 3-layer
+// simulcast for adaptive bitrate, and wideband Opus audio at 48 kbps.
+const VIDEO_PUBLISH_OPTIONS = {
+  videoPublishOptions: {
+    preferredCodec: 'h264' as const,
+    targetResolution: { width: 1280, height: 720, frameRate: 30 },
+    simulcastLayers: [
+      { maxBitrate: 150_000, scaleResolutionDownBy: 4 },  // 180p fallback
+      { maxBitrate: 500_000, scaleResolutionDownBy: 2 },  // 360p mid
+      { maxBitrate: 1_200_000, scaleResolutionDownBy: 1 }, // 720p high
+    ],
+  },
+  audioPublishOptions: {
+    bitrateBps: 48_000, // Wideband Opus — up from default ~20 kbps
+    dtx: true,          // Silence detection — saves bandwidth
+    stereo: false,      // Mono voice — saves ~50% vs stereo
+  },
 };
 
+type CallStatusCopy = { title: string; subtitle: string };
+
+// ─── Active call surface ──────────────────────────────────────────────────────
+// Uses Stream SDK's ParticipantView (full-screen remote) + FloatingParticipantView
+// (draggable self PiP) + individual control buttons for full HQ control.
 function ActiveStreamCallSurface({ onHangup }: { onHangup: () => void }) {
-  const { useCallCallingState } = useCallStateHooks();
+  const { useCallCallingState, useRemoteParticipants, useLocalParticipant } =
+    useCallStateHooks();
   const callingState = useCallCallingState();
+  const remoteParticipants = useRemoteParticipants();
+  const localParticipant = useLocalParticipant();
+  const call = useCall();
 
   if (
     callingState === CallingState.JOINING ||
@@ -53,49 +83,79 @@ function ActiveStreamCallSurface({ onHangup }: { onHangup: () => void }) {
     return (
       <View style={styles.mediaLoading}>
         <ActivityIndicator color="#fff" size="large" />
-        <Text style={styles.mediaLoadingTitle}>Joining call…</Text>
+        <Text style={styles.mediaLoadingTitle}>
+          {callingState === CallingState.RECONNECTING
+            ? 'Reconnecting…'
+            : 'Joining call…'}
+        </Text>
         <Text style={styles.mediaLoadingText}>Connecting audio and video.</Text>
       </View>
     );
   }
 
+  const remoteParticipant = remoteParticipants[0];
+
   return (
-    <CallContent
-      disablePictureInPicture
-      onHangupCallHandler={() => {
-        onHangup();
-      }}
-    />
-  );
+    <View style={styles.callSurface}>
+        {/* ── Full-screen remote participant video ── */}
+        {remoteParticipant ? (
+          <ParticipantView
+            participant={remoteParticipant}
+            style={styles.remoteVideo}
+            videoZOrder={0}
+          />
+        ) : (
+          <View style={styles.remoteVideoPlaceholder}>
+            <ActivityIndicator color="rgba(255,255,255,0.5)" />
+            <Text style={styles.waitingText}>Waiting for the other person…</Text>
+          </View>
+        )}
+
+        {/* ── Draggable self-view PiP ── */}
+        {localParticipant && (
+          <FloatingParticipantView
+            participant={localParticipant}
+            style={styles.selfView}
+          />
+        )}
+
+        {/* ── Controls bar ── */}
+        <View style={styles.controlsBar}>
+          {/* Mute / unmute mic */}
+          <ToggleAudioPublishingButton />
+
+          {/* Camera on / off */}
+          <ToggleVideoPublishingButton />
+
+          {/* Flip camera (front ↔ back) */}
+          <ToggleCameraFaceButton />
+
+          {/* End call */}
+          <HangupCallButton
+            onHangupCallHandler={() => {
+              if (call) {
+                call.leave({ reject: false }).catch(() => {});
+              }
+              onHangup();
+            }}
+          />
+        </View>
+      </View>
+    );
 }
 
 function getTerminalCopy(status?: VideoCallDocument['status']): CallStatusCopy {
   switch (status) {
     case 'declined':
-      return {
-        title: 'Call declined',
-        subtitle: 'They chose not to join this video call.',
-      };
+      return { title: 'Call declined', subtitle: 'They chose not to join this video call.' };
     case 'cancelled':
-      return {
-        title: 'Call cancelled',
-        subtitle: 'The invite was cancelled before the call started.',
-      };
+      return { title: 'Call cancelled', subtitle: 'The invite was cancelled before the call started.' };
     case 'missed':
-      return {
-        title: 'Missed call',
-        subtitle: 'The video call invite timed out.',
-      };
+      return { title: 'Missed call', subtitle: 'The video call invite timed out.' };
     case 'ended':
-      return {
-        title: 'Call ended',
-        subtitle: 'The video session has finished.',
-      };
+      return { title: 'Call ended', subtitle: 'The video session has finished.' };
     default:
-      return {
-        title: 'Call unavailable',
-        subtitle: 'This video call is no longer active.',
-      };
+      return { title: 'Call unavailable', subtitle: 'This video call is no longer active.' };
   }
 }
 
@@ -127,20 +187,12 @@ export default function CallScreen() {
   const joinedStreamCallIdRef = useRef<string | null>(null);
   const hasRequestedEndRef = useRef(false);
 
-  useEffect(() => {
-    latestCallRef.current = callRecord;
-  }, [callRecord]);
+  useEffect(() => { latestCallRef.current = callRecord; }, [callRecord]);
+  useEffect(() => { activeCallRef.current = streamCall; }, [streamCall]);
 
+  // ── Firestore listener for call record ──
   useEffect(() => {
-    activeCallRef.current = streamCall;
-  }, [streamCall]);
-
-  useEffect(() => {
-    if (!callId) {
-      setIsLoadingCall(false);
-      return;
-    }
-
+    if (!callId) { setIsLoadingCall(false); return; }
     setIsLoadingCall(true);
     return listenToVideoCall(callId, (nextCall) => {
       setCallRecord(nextCall);
@@ -148,11 +200,9 @@ export default function CallScreen() {
     });
   }, [callId]);
 
+  // ── Clean up Stream call when Firestore record goes terminal ──
   useEffect(() => {
-    if (!callRecord || !isVideoCallTerminalStatus(callRecord.status)) {
-      return;
-    }
-
+    if (!callRecord || !isVideoCallTerminalStatus(callRecord.status)) return;
     const activeCall = activeCallRef.current;
     if (activeCall) {
       activeCall.leave({ reject: false }).catch((error) => {
@@ -160,21 +210,16 @@ export default function CallScreen() {
       });
       activeCallRef.current = null;
     }
-
     joinedStreamCallIdRef.current = null;
     setStreamCall(null);
     setStreamClient(null);
     void disconnectStreamVideoClient();
   }, [callRecord]);
 
+  // ── Join Stream SDK call when Firestore record = 'accepted' ──
   useEffect(() => {
-    if (!callRecord || callRecord.status !== 'accepted' || !currentUid) {
-      return;
-    }
-
-    if (joinedStreamCallIdRef.current === callRecord.streamCallId) {
-      return;
-    }
+    if (!callRecord || callRecord.status !== 'accepted' || !currentUid) return;
+    if (joinedStreamCallIdRef.current === callRecord.streamCallId) return;
 
     let cancelled = false;
 
@@ -189,15 +234,23 @@ export default function CallScreen() {
           image: currentPhoto,
         });
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         const nextCall = client.call(callRecord.streamCallType, callRecord.streamCallId);
         activeCallRef.current = nextCall;
         joinedStreamCallIdRef.current = callRecord.streamCallId;
 
-        await nextCall.join();
+        // ── High-quality join ──
+        // publishOptions force H.264 HW encoder, 720p/30fps, 3-layer simulcast,
+        // and 48 kbps Opus audio. Without these Stream uses defaults (~300 kbps VP8).
+        await nextCall.join({
+          create: false,
+          ring: false,
+          notify: false,
+          audio: true,
+          video: true,
+          ...(VIDEO_PUBLISH_OPTIONS as any),
+        });
 
         if (cancelled) {
           await nextCall.leave({ reject: false }).catch(() => {});
@@ -212,17 +265,12 @@ export default function CallScreen() {
         activeCallRef.current = null;
         setJoinError(error?.message || 'Unable to connect to the video call right now.');
       } finally {
-        if (!cancelled) {
-          setIsJoiningMedia(false);
-        }
+        if (!cancelled) setIsJoiningMedia(false);
       }
     };
 
     void joinCall();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [
     callRecord?.status,
     callRecord?.streamCallId,
@@ -233,14 +281,13 @@ export default function CallScreen() {
     joinAttempt,
   ]);
 
+  // ── Cleanup on unmount ──
   useEffect(() => {
     return () => {
       const pendingCall = latestCallRef.current;
       const activeCall = activeCallRef.current;
 
-      if (activeCall) {
-        activeCall.leave({ reject: false }).catch(() => {});
-      }
+      if (activeCall) activeCall.leave({ reject: false }).catch(() => {});
 
       if (pendingCall && !isVideoCallTerminalStatus(pendingCall.status) && !hasRequestedEndRef.current) {
         void endVideoCall(pendingCall.id).catch((error) => {
@@ -253,21 +300,14 @@ export default function CallScreen() {
   }, []);
 
   const otherParticipant = useMemo<VideoCallParticipant | null>(() => {
-    if (!callRecord || !currentUid) {
-      return callRecord?.caller || null;
-    }
-
+    if (!callRecord || !currentUid) return callRecord?.caller || null;
     return currentUid === callRecord.callerUid ? callRecord.callee : callRecord.caller;
   }, [callRecord, currentUid]);
 
   const isCaller = currentUid === callRecord?.callerUid;
 
   const navigateToChat = () => {
-    if (!callRecord || !otherParticipant) {
-      router.back();
-      return;
-    }
-
+    if (!callRecord || !otherParticipant) { router.back(); return; }
     router.replace({
       pathname: '/chat/[id]',
       params: {
@@ -280,10 +320,7 @@ export default function CallScreen() {
   };
 
   const handleAccept = async () => {
-    if (!callRecord || isActionLoading) {
-      return;
-    }
-
+    if (!callRecord || isActionLoading) return;
     try {
       setIsActionLoading(true);
       await acceptVideoCallInvite(callRecord.id);
@@ -296,10 +333,7 @@ export default function CallScreen() {
   };
 
   const handleDecline = async () => {
-    if (!callRecord || isActionLoading) {
-      return;
-    }
-
+    if (!callRecord || isActionLoading) return;
     try {
       hasRequestedEndRef.current = true;
       setIsActionLoading(true);
@@ -315,10 +349,7 @@ export default function CallScreen() {
   };
 
   const handleHangup = async () => {
-    if (!callRecord || isActionLoading) {
-      return;
-    }
-
+    if (!callRecord || isActionLoading) return;
     try {
       hasRequestedEndRef.current = true;
       setIsActionLoading(true);
@@ -339,12 +370,10 @@ export default function CallScreen() {
     setStreamCall(null);
     setStreamClient(null);
     setJoinError(null);
-    setJoinAttempt((value) => value + 1);
+    setJoinAttempt((v) => v + 1);
   };
 
-  if (!currentUid) {
-    return null;
-  }
+  if (!currentUid) return null;
 
   if (isLoadingCall) {
     return (
@@ -368,7 +397,6 @@ export default function CallScreen() {
 
   if (isVideoCallTerminalStatus(callRecord.status)) {
     const copy = getTerminalCopy(callRecord.status);
-
     return (
       <View style={[styles.stateScreen, { paddingTop: insets.top + 24 }]}>
         <View style={styles.heroOrb} />
@@ -449,7 +477,7 @@ export default function CallScreen() {
     return (
       <View style={[styles.stateScreen, { paddingTop: insets.top + 24 }]}>
         <View style={styles.statusCard}>
-          <Text style={styles.statusTitle}>Couldn’t join the call</Text>
+          <Text style={styles.statusTitle}>Couldn't join the call</Text>
           <Text style={styles.statusSubtitle}>{joinError}</Text>
           <View style={styles.errorActions}>
             <Pressable onPress={retryJoin} style={styles.primaryButton}>
@@ -469,7 +497,7 @@ export default function CallScreen() {
       <View style={styles.loadingScreen}>
         <ActivityIndicator color="#fff" size="large" />
         <Text style={styles.loadingTitle}>Connecting call…</Text>
-        <Text style={styles.loadingText}>Starting video with {otherParticipant.displayName}.</Text>
+        <Text style={styles.loadingText}>Starting HD video with {otherParticipant.displayName}.</Text>
       </View>
     );
   }
@@ -490,6 +518,52 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#050102',
   },
+
+  // ── Active call surface ──
+  callSurface: {
+    flex: 1,
+    backgroundColor: '#050102',
+  },
+  remoteVideo: {
+    flex: 1,
+  },
+  remoteVideoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  waitingText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  selfView: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+    width: 120,
+    height: 160,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+
+  // ── Controls bar ──
+  controlsBar: {
+    position: 'absolute',
+    bottom: 48,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+    paddingHorizontal: 24,
+  },
+
+  // ── Loading / state screens ──
   loadingScreen: {
     flex: 1,
     backgroundColor: '#050102',
@@ -507,6 +581,24 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.62)',
     fontSize: 14,
     textAlign: 'center',
+    marginTop: 8,
+  },
+  mediaLoading: {
+    flex: 1,
+    backgroundColor: '#050102',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  mediaLoadingTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 16,
+  },
+  mediaLoadingText: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 14,
     marginTop: 8,
   },
   stateScreen: {
@@ -579,12 +671,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  acceptRound: {
-    backgroundColor: '#16a34a',
-  },
-  declineRound: {
-    backgroundColor: '#b91c1c',
-  },
+  acceptRound: { backgroundColor: '#16a34a' },
+  declineRound: { backgroundColor: '#b91c1c' },
   primaryButton: {
     minWidth: 160,
     borderRadius: 18,
@@ -595,11 +683,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 22,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  primaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   secondaryButton: {
     minWidth: 140,
     borderRadius: 18,
@@ -610,32 +694,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 16,
   },
-  secondaryButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  secondaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   errorActions: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 8,
-  },
-  mediaLoading: {
-    flex: 1,
-    backgroundColor: '#050102',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  mediaLoadingTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: 16,
-  },
-  mediaLoadingText: {
-    color: 'rgba(255,255,255,0.62)',
-    fontSize: 14,
     marginTop: 8,
   },
 });
