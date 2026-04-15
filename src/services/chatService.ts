@@ -9,6 +9,8 @@ import {
   onSnapshot,
   serverTimestamp,
   deleteDoc,
+  updateDoc,
+  arrayUnion,
 } from '@react-native-firebase/firestore';
 import { getAuth } from '@react-native-firebase/auth';
 import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
@@ -80,6 +82,8 @@ function normalizeMessageDocument(
     sent: Boolean(rawMessage.sent),
     received: Boolean(rawMessage.received),
     pending: Boolean(rawMessage.pending),
+    // Preserve the deletedFor array so the caller can filter
+    deletedFor: Array.isArray(rawMessage.deletedFor) ? (rawMessage.deletedFor as string[]) : [],
   };
 }
 
@@ -166,11 +170,14 @@ export const sendImageMessage = async (
 
 /**
  * Real-time listener for messages in a specific match.
+ * Automatically filters out messages that have been "deleted for me" by
+ * the given userId (stored in the Firestore `deletedFor` array field).
  * ONLY mount this when the Chat Screen is OPEN!
  */
 export const listenToMessages = (
   matchId: string,
-  onUpdate: (messages: MessageDocument[]) => void
+  onUpdate: (messages: MessageDocument[]) => void,
+  currentUserId?: string,
 ) => {
   const matchRef = doc(collection(db, 'matches'), matchId);
   const messagesQuery = query(
@@ -180,9 +187,13 @@ export const listenToMessages = (
   );
 
   return onSnapshot(messagesQuery, (snapshot) => {
-      const messages = snapshot.docs.map((messageDoc: any) =>
-        normalizeMessageDocument(messageDoc.id, messageDoc.data())
-      );
+      const messages = snapshot.docs
+        .map((messageDoc: any) =>
+          normalizeMessageDocument(messageDoc.id, messageDoc.data())
+        )
+        // Filter out messages this user soft-deleted
+        .filter((m) => !currentUserId || !(m.deletedFor ?? []).includes(currentUserId));
+
       onUpdate(messages);
     }, (error) => {
       if ((error as any)?.code === 'firestore/permission-denied') {
@@ -275,4 +286,22 @@ export const deleteMessageForEveryone = async (
       // Object may already be gone — safe to swallow
     }
   }
+};
+
+/**
+ * Soft-deletes a message for the current user only.
+ * Adds the user's UID to the message's `deletedFor` array in Firestore.
+ * The next listener snapshot will automatically exclude this message
+ * for this user, and the message remains visible for the other participant.
+ */
+export const deleteMessageForMe = async (
+  matchId: string,
+  messageId: string,
+  userId: string,
+): Promise<void> => {
+  const matchRef = doc(collection(db, 'matches'), matchId);
+  const messageRef = doc(collection(matchRef, 'messages'), messageId);
+  await updateDoc(messageRef, {
+    deletedFor: arrayUnion(userId),
+  });
 };
