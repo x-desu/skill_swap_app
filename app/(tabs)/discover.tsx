@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity, InteractionManager } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Heart, Zap } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet from '@gorhom/bottom-sheet';
 
@@ -11,7 +11,7 @@ import type { RootState } from '../../src/store';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
 import { useDiscoverFilters } from '../../src/hooks/useDiscoverFilters';
-import { useSubscriptionStatus } from '../../src/hooks/useSubscriptionStatus';
+import { DAILY_FREE_LIMITS, ACTION_CREDIT_COSTS } from '../../src/constants/ActionLimits';
 
 import { CardStack } from '../../src/components/Discover/CardStack';
 import { SearchHeader } from '../../src/components/Discover/SearchHeader';
@@ -19,8 +19,9 @@ import { FilterBottomSheet } from '../../src/components/Discover/FilterBottomShe
 
 import { likeUser, passUser } from '../../src/services/matchingService';
 import { removeFeedItem, recordSwipeData } from '../../src/store/discoverySlice';
-
-const DAILY_SWIPE_LIMIT_FREE = 5;
+import { checkAndResetDailyLimits, incrementDailyLimit } from '../../src/services/firestoreService';
+import { spendCreditsOnServer } from '../../src/services/creditsService';
+import { Alert } from 'react-native';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -37,7 +38,6 @@ export default function DiscoverScreen() {
   const authUser = useSelector((state: RootState) => state.auth.user);
   const profile = useSelector((state: RootState) => state.profile.profile);
   const { colors, isDark } = useTheme();
-  const { isPro } = useSubscriptionStatus();
   const dispatch = useDispatch();
 
   const bottomSheetRef = useRef<BottomSheet>(null);
@@ -51,9 +51,28 @@ export default function DiscoverScreen() {
   // only recomputes when rawUsers or filters change, NOT on every Firestore profile update.
   const filteredUsers = useMemo(() => applyFilters(rawUsers, profile), [rawUsers, profile, applyFilters]);
 
-  const [dailySwipeCount, setDailySwipeCount] = useState(0);
+  const dailySwipeCount = profile?.dailySwipes || 0;
+  const currentCredits = profile?.credits || 0;
+  
   const [isScreenReady, setIsScreenReady] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
+
+  const params = useLocalSearchParams<{ searchQuery?: string; category?: string }>();
+
+  useEffect(() => {
+    if (currentUid) {
+      checkAndResetDailyLimits(currentUid).catch(console.error);
+    }
+  }, [currentUid]);
+
+  useEffect(() => {
+    if (params.searchQuery !== undefined) {
+      setFilter('searchQuery', params.searchQuery);
+    }
+    if (params.category !== undefined) {
+      setFilter('category', params.category);
+    }
+  }, [params.searchQuery, params.category, setFilter]);
 
   // Defer heavy work until after navigation transition completes
   useEffect(() => {
@@ -70,16 +89,42 @@ export default function DiscoverScreen() {
   const shouldShowCards = isScreenReady && hasUsers;
   const shouldShowLoading = isScreenReady && loading && !hasUsers;
 
-  const canSwipe = isPro || dailySwipeCount < DAILY_SWIPE_LIMIT_FREE;
-  const remainingSwipes = isPro ? '∞' : Math.max(0, DAILY_SWIPE_LIMIT_FREE - dailySwipeCount);
+  const remainingSwipes = Math.max(0, DAILY_FREE_LIMITS.SWIPES - dailySwipeCount);
 
-  // Memoize so CardStack props stay stable between renders
   const handleSwipeRight = useCallback(async () => {
     if (!filteredUsers.length || !currentUid) return;
+    
+    // Check limits
+    if (dailySwipeCount >= DAILY_FREE_LIMITS.SWIPES) {
+      if (currentCredits < ACTION_CREDIT_COSTS.EXTRA_SWIPE) {
+        Alert.alert('Out of Credits', 'You need credits to keep swiping after your free daily limit.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Get Credits', onPress: () => router.push('/paywall') }
+        ]);
+        return;
+      }
+
+      const confirm = await new Promise((resolve) => {
+        Alert.alert('Spend Credit', `Spend ${ACTION_CREDIT_COSTS.EXTRA_SWIPE} credit to swipe?`, [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Swipe', onPress: () => resolve(true) }
+        ]);
+      });
+      if (!confirm) return;
+
+      try {
+        await spendCreditsOnServer(ACTION_CREDIT_COSTS.EXTRA_SWIPE, 'extra_swipe');
+      } catch (e) {
+        Alert.alert('Error', 'Failed to deduct credits.');
+        return;
+      }
+    }
+
     const target = filteredUsers[0];
     dispatch(removeFeedItem(target.uid));
     dispatch(recordSwipeData({ targetUid: target.uid, type: 'like' }));
-    setDailySwipeCount((prev) => prev + 1);
+    incrementDailyLimit(currentUid, 'dailySwipes').catch(console.error);
+
     try {
       const match = await likeUser(currentUid, target.uid);
       if (match) {
@@ -96,20 +141,48 @@ export default function DiscoverScreen() {
     } catch (e) {
       console.error('Failed to like user', e);
     }
-  }, [filteredUsers, currentUid, dispatch]);
+  }, [filteredUsers, currentUid, dispatch, dailySwipeCount, currentCredits]);
 
   const handleSwipeLeft = useCallback(async () => {
     if (!filteredUsers.length || !currentUid) return;
+    
+    // Check limits
+    if (dailySwipeCount >= DAILY_FREE_LIMITS.SWIPES) {
+      if (currentCredits < ACTION_CREDIT_COSTS.EXTRA_SWIPE) {
+        Alert.alert('Out of Credits', 'You need credits to keep swiping after your free daily limit.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Get Credits', onPress: () => router.push('/paywall') }
+        ]);
+        return;
+      }
+
+      const confirm = await new Promise((resolve) => {
+        Alert.alert('Spend Credit', `Spend ${ACTION_CREDIT_COSTS.EXTRA_SWIPE} credit to swipe?`, [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Swipe', onPress: () => resolve(true) }
+        ]);
+      });
+      if (!confirm) return;
+
+      try {
+        await spendCreditsOnServer(ACTION_CREDIT_COSTS.EXTRA_SWIPE, 'extra_swipe');
+      } catch (e) {
+        Alert.alert('Error', 'Failed to deduct credits.');
+        return;
+      }
+    }
+
     const target = filteredUsers[0];
     dispatch(removeFeedItem(target.uid));
     dispatch(recordSwipeData({ targetUid: target.uid, type: 'pass' }));
-    setDailySwipeCount((prev) => prev + 1);
+    incrementDailyLimit(currentUid, 'dailySwipes').catch(console.error);
+
     try {
       await passUser(currentUid, target.uid);
     } catch (e) {
       console.error('Failed to pass user', e);
     }
-  }, [filteredUsers, currentUid, dispatch]);
+  }, [filteredUsers, currentUid, dispatch, dailySwipeCount, currentCredits]);
 
   const openFilters = useCallback(() => {
     setShowFilterSheet(true);
@@ -147,16 +220,14 @@ export default function DiscoverScreen() {
             activeFilterCount={activeFilterCount}
           />
 
-          {!isPro && (
-            <View style={styles.swipeCounterContainer}>
-              <View style={styles.swipeCounter}>
-                <Zap size={12} color="#fff" fill="#fff" />
-                <Text style={styles.swipeCounterText}>
-                  {remainingSwipes} Swipes Left
-                </Text>
-              </View>
+          <View style={styles.swipeCounterContainer}>
+            <View style={styles.swipeCounter}>
+              <Zap size={12} color="#fff" fill="#fff" />
+              <Text style={styles.swipeCounterText}>
+                {remainingSwipes > 0 ? `${remainingSwipes} Free Swipes Left` : 'Pay-As-You-Go Mode'}
+              </Text>
             </View>
-          )}
+          </View>
 
           {shouldShowLoading ? (
             <View style={[styles.center, { flex: 1 }]}>
@@ -188,18 +259,16 @@ export default function DiscoverScreen() {
           {hasUsers && (
             <View style={styles.footer}>
               <TouchableOpacity
-                style={[styles.button, styles.passButton, { opacity: canSwipe ? 1 : 0.5 }]}
+                style={[styles.button, styles.passButton]}
                 onPress={handleSwipeLeft}
-                disabled={!canSwipe}
                 activeOpacity={0.8}
               >
                 <X color="#fff" size={28} />
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.button, styles.likeButton, { opacity: canSwipe ? 1 : 0.5 }]}
+                style={[styles.button, styles.likeButton]}
                 onPress={handleSwipeRight}
-                disabled={!canSwipe}
                 activeOpacity={0.8}
               >
                 <Heart color="#fff" size={28} fill="#fff" />

@@ -45,9 +45,9 @@ type ResolvedLocation = {
 };
 
 const CREDIT_PACKS = [
-  { id: 'starter', credits: 10, usd: 0.59, label: 'Starter Pack', badge: '10' },
-  { id: 'value', credits: 50, usd: 5.0, label: 'Value Pack', badge: '50' },
-  { id: 'pro', credits: 100, usd: 10.0, label: 'Pro Pack', badge: '100' },
+  { id: 'starter', credits: 10, inr: 99, label: 'Starter Pack', badge: '10' },
+  { id: 'value', credits: 25, inr: 250, label: 'Value Pack', badge: '25' },
+  { id: 'pro', credits: 75, inr: 499, label: 'Pro Pack', badge: '75' },
 ];
 
 function formatLocationLabel(location: Partial<ResolvedLocation> | null | undefined): string {
@@ -173,7 +173,7 @@ export default function PaywallScreen() {
     setPurchasing(true);
     try {
       const success = await startRazorpayPayment(
-        pack.usd * 83, // Approximate INR conversion for testing
+        pack.inr,
         pack.credits,
         user?.email || undefined
       );
@@ -267,7 +267,6 @@ export default function PaywallScreen() {
         <View style={styles.cardsRow}>
           {CREDIT_PACKS.map((pack, i) => {
             const selected = i === selectedIdx;
-            const inrPrice = (pack.usd * 83).toFixed(0);
             return (
               <TouchableOpacity
                 key={pack.id}
@@ -279,8 +278,8 @@ export default function PaywallScreen() {
                   <Text style={styles.badgeText}>{pack.badge} CREDITS</Text>
                 </View>
                 <Text style={[styles.period, selected && styles.periodSelected]}>{pack.label}</Text>
-                <Text style={[styles.price, selected && styles.priceSelected]}>${pack.usd.toFixed(2)}</Text>
-                <Text style={styles.approxPrice}>Approx. ₹{inrPrice} in India</Text>
+                <Text style={[styles.price, selected && styles.priceSelected]}>₹{pack.inr}</Text>
+                <Text style={styles.approxPrice}>{pack.credits} credits to connect</Text>
               </TouchableOpacity>
             );
           })}

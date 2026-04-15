@@ -24,7 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { getAuth, updateProfile } from '@react-native-firebase/auth';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { Camera, X, Plus, ChevronRight, MapPin } from 'lucide-react-native';
+import { Camera, X, Plus, ChevronRight, MapPin, Sparkles, Map, GraduationCap, Target } from 'lucide-react-native';
 import { useAuthDispatch } from '../../src/hooks/useAuth';
 import { setProfileComplete, setUser } from '../../src/store/authSlice';
 import { uploadProfilePhoto } from '../../src/services/storageService';
@@ -33,51 +33,51 @@ import { upsertUserProfile } from '../../src/services/firestoreService';
 // ─── Skill Taxonomy ───────────────────────────────────────────────────────────
 
 const SKILL_TAXONOMY: Record<string, string[]> = {
-  '💻 Tech': [
+  'Tech': [
     'Python', 'JavaScript', 'TypeScript', 'React', 'React Native', 'Node.js',
     'Swift', 'Kotlin', 'Flutter', 'Java', 'C++', 'Rust', 'Go', 'SQL',
     'MongoDB', 'Firebase', 'AWS', 'Docker', 'Git', 'Machine Learning',
     'Data Science', 'UI/UX Design', 'Figma', 'Cybersecurity', 'DevOps',
     'Blockchain', 'Web3', 'Excel / Sheets', 'PowerPoint', 'Notion',
   ],
-  '🎨 Creative': [
+  'Creative': [
     'Photography', 'Video Editing', 'Drawing', 'Illustration', 'Painting',
     'Graphic Design', 'Logo Design', 'Animation', '3D Modeling', 'Blender',
     'Adobe Photoshop', 'Adobe Illustrator', 'Lightroom', 'Canva',
     'Comic Art', 'Calligraphy', 'Pottery', 'Textile Design', 'Fashion Design',
   ],
-  '🎵 Music': [
+  'Music': [
     'Guitar', 'Piano', 'Violin', 'Drums', 'Bass Guitar', 'Ukulele',
     'Singing', 'Songwriting', 'Music Production', 'DJ', 'Beatmaking',
     'Music Theory', 'Flute', 'Saxophone', 'Tabla', 'Sitar',
   ],
-  '💬 Languages': [
+  'Languages': [
     'English', 'Spanish', 'French', 'German', 'Mandarin', 'Japanese',
     'Korean', 'Arabic', 'Hindi', 'Portuguese', 'Italian', 'Russian',
     'Turkish', 'Dutch', 'Swedish', 'Sign Language',
   ],
-  '💪 Fitness': [
+  'Fitness': [
     'Yoga', 'Meditation', 'Gym Training', 'Calisthenics', 'CrossFit',
     'Running', 'Swimming', 'Cycling', 'Pilates', 'Martial Arts', 'Boxing',
     'Dance', 'Zumba', 'Nutrition & Diet', 'Rock Climbing',
   ],
-  '🍳 Cooking': [
+  'Cooking': [
     'Cooking', 'Baking', 'Pastry & Desserts', 'Indian Cuisine', 'Italian Cuisine',
     'Japanese Cuisine', 'Vegan Cooking', 'BBQ & Grilling', 'Cocktail Making',
     'Coffee Brewing', 'Meal Prep', 'Fermentation',
   ],
-  '📈 Business': [
+  'Business': [
     'Marketing', 'Digital Marketing', 'SEO', 'Social Media', 'Content Writing',
     'Copywriting', 'Entrepreneurship', 'Finance', 'Investing', 'Accounting',
     'Product Management', 'Sales', 'Public Speaking', 'Leadership',
     'Project Management', 'Business Strategy',
   ],
-  '🎓 Academic': [
+  'Academic': [
     'Mathematics', 'Physics', 'Chemistry', 'Biology', 'History',
     'Economics', 'Psychology', 'Philosophy', 'Literature', 'Writing',
     'Research', 'Statistics', 'Architecture',
   ],
-  '🛠️ Practical': [
+  'Practical': [
     'Carpentry', 'Plumbing', 'Electrical Work', 'Gardening', 'Home Repair',
     'Sewing', 'Knitting', 'Car Maintenance', '3D Printing', 'Electronics',
   ],
@@ -137,10 +137,13 @@ function SuggestionChip({ label, onPress }: { label: string; onPress: () => void
   );
 }
 
-function SectionHeader({ title, hint }: { title: string; hint: string }) {
+function SectionHeader({ title, hint, icon: Icon }: { title: string; hint: string; icon?: React.ElementType }) {
   return (
     <View style={styles.sectionHeaderWrap}>
-      <Text style={styles.label}>{title}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+        {Icon && <Icon size={16} color="#fff" />}
+        <Text style={[styles.label, { marginBottom: 0 }]}>{title}</Text>
+      </View>
       <Text style={styles.fieldHint}>{hint}</Text>
     </View>
   );
@@ -434,9 +437,12 @@ export default function ProfileSetup() {
       >
         {/* ── Header ── */}
         <Text style={styles.title}>Set up your profile</Text>
-        <Text style={styles.subtitle}>
-          Tell the community who you are — this shapes who you'll meet ✨
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 36, gap: 6, flexWrap: 'wrap' }}>
+          <Text style={[styles.subtitle, { marginBottom: 0 }]}>
+            Tell the community who you are — this shapes who you'll meet
+          </Text>
+          <Sparkles color="rgba(255,255,255,0.4)" size={16} />
+        </View>
 
         {/* ── Photo Section ── */}
         <View style={styles.photoSection}>
@@ -472,7 +478,7 @@ export default function ProfileSetup() {
 
         {/* ── Location ── */}
         <View style={styles.section}>
-          <SectionHeader title="Location 📍" hint="Where are you based?" />
+          <SectionHeader title="Location" hint="Where are you based?" icon={Map} />
           <TouchableOpacity
             style={styles.locationBtn}
             onPress={fetchLocation}
@@ -495,8 +501,9 @@ export default function ProfileSetup() {
         {/* ── Skills I Teach ── */}
         <View style={[styles.section, { zIndex: 20 }]}>
           <SectionHeader
-            title="Skills you can teach 🎓"
+            title="Skills you can teach"
             hint="Type to search categories, or tap a suggestion"
+            icon={GraduationCap}
           />
 
           <SkillInputWithAutocomplete
@@ -541,8 +548,9 @@ export default function ProfileSetup() {
         {/* ── Skills I Want ── */}
         <View style={[styles.section, { zIndex: 10 }]}>
           <SectionHeader
-            title="Skills you want to learn 🎯"
+            title="Skills you want to learn"
             hint="What do you want to get better at?"
+            icon={Target}
           />
 
           <SkillInputWithAutocomplete

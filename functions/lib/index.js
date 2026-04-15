@@ -39,7 +39,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.grantAllUsersPlusTenCredits = exports.declineRequest = exports.acceptRequest = exports.deleteChatThread = exports.getStreamVideoToken = exports.endVideoCall = exports.declineVideoCallInvite = exports.createVideoCallInvite = exports.acceptVideoCallInvite = exports.spendCredits = exports.seedNewUserCredits = exports.revenueCatWebhook = exports.onMatchCreated = exports.onMessageCreated = exports.onLikeCreated = void 0;
+exports.declineRequest = exports.acceptRequest = exports.deleteChatThread = exports.getStreamVideoToken = exports.endVideoCall = exports.declineVideoCallInvite = exports.createVideoCallInvite = exports.acceptVideoCallInvite = exports.spendCredits = exports.seedNewUserCredits = exports.revenueCatWebhook = exports.onMatchCreated = exports.onMessageCreated = exports.onLikeCreated = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const admin = __importStar(require("firebase-admin"));
 const node_fetch_1 = __importDefault(require("node-fetch"));
@@ -393,6 +393,4 @@ Object.defineProperty(exports, "deleteChatThread", { enumerable: true, get: func
 var requests_1 = require("./requests");
 Object.defineProperty(exports, "acceptRequest", { enumerable: true, get: function () { return requests_1.acceptRequest; } });
 Object.defineProperty(exports, "declineRequest", { enumerable: true, get: function () { return requests_1.declineRequest; } });
-var adminBulkCredits_1 = require("./adminBulkCredits");
-Object.defineProperty(exports, "grantAllUsersPlusTenCredits", { enumerable: true, get: function () { return adminBulkCredits_1.grantAllUsersPlusTenCredits; } });
 //# sourceMappingURL=index.js.map

@@ -23,7 +23,10 @@ service cloud.firestore {
     // Only the owner can WRITE their own document (create or update).
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow write: if isOwner(uid);
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid) && 
+        (!request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['credits', 'creditsSpent', 'lastPaymentId', 'isPremium', 'premiumExpiresAt']));
     }
 
     // ─── swapRequests/{id} ───────────────────────────────────────────────────

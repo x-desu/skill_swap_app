@@ -10,13 +10,14 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { runAppInit } from '../src/services/appInit';
-import { useStore } from '../src/store/useStore';
+import { useDispatch } from 'react-redux';
+import { setAppLoading } from '../src/store/authSlice';
 
 const { width } = Dimensions.get('window');
 const BAR_MAX = width * 0.5;
 
 export default function SplashScreen() {
-    const { setInitialized } = useStore();
+    const dispatch = useDispatch();
     const [statusLabel, setStatusLabel] = useState('');
 
     const opacity    = useRef(new Animated.Value(0)).current;
@@ -55,12 +56,12 @@ export default function SplashScreen() {
 
                     if (progress >= 100) {
                         setTimeout(() => {
-                            setInitialized(true);
+                            dispatch(setAppLoading(false));
                             router.replace('/(tabs)');
                         }, 300);
                     }
                 }).catch(() => {
-                    setInitialized(true);
+                    dispatch(setAppLoading(false));
                     router.replace('/(tabs)');
                 });
             });

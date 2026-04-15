@@ -31,6 +31,56 @@ type RequestActionResponse = {
   matchId?: string;
 };
 
+function normalizeMessageDocument(
+  messageId: string,
+  rawMessage: Partial<MessageDocument> & {
+    createdAt?: { toDate?: () => Date } | number | Date | null;
+    user?: Partial<MessageDocument['user']> | null;
+  },
+): MessageDocument {
+  const createdAtValue = rawMessage.createdAt;
+  const createdAt =
+    typeof createdAtValue === 'number'
+      ? createdAtValue
+      : createdAtValue instanceof Date
+        ? createdAtValue.getTime()
+        : typeof createdAtValue?.toDate === 'function'
+          ? createdAtValue.toDate().getTime()
+          : Date.now();
+
+  const normalizedUserId =
+    typeof rawMessage.user?._id === 'string' && rawMessage.user._id.trim()
+      ? rawMessage.user._id
+      : 'unknown-user';
+
+  return {
+    _id:
+      typeof rawMessage._id === 'string' && rawMessage._id.trim()
+        ? rawMessage._id
+        : messageId,
+    text: typeof rawMessage.text === 'string' ? rawMessage.text : '',
+    createdAt,
+    user: {
+      _id: normalizedUserId,
+      name:
+        typeof rawMessage.user?.name === 'string' && rawMessage.user.name.trim()
+          ? rawMessage.user.name
+          : 'SkillSwap User',
+      avatar:
+        typeof rawMessage.user?.avatar === 'string' && rawMessage.user.avatar.trim()
+          ? rawMessage.user.avatar
+          : undefined,
+    },
+    image: typeof rawMessage.image === 'string' ? rawMessage.image : undefined,
+    video: typeof rawMessage.video === 'string' ? rawMessage.video : undefined,
+    audio: typeof rawMessage.audio === 'string' ? rawMessage.audio : undefined,
+    system: Boolean(rawMessage.system),
+    sent: Boolean(rawMessage.sent),
+    received: Boolean(rawMessage.received),
+    pending: Boolean(rawMessage.pending),
+  };
+}
+
 function isUnauthenticatedCallableError(error: unknown): boolean {
   const maybeError = error as {
     code?: string;
@@ -86,7 +136,7 @@ export const sendMessage = async (matchId: string, message: MessageDocument): Pr
  */
 export const sendImageMessage = async (
   matchId: string,
-  imageUri: string,
+  imageUrl: string,
   user: { _id: string; name: string; avatar?: string }
 ): Promise<void> => {
   const batch = writeBatch(db);
@@ -98,7 +148,7 @@ export const sendImageMessage = async (
   batch.set(messagesRef, {
     _id: messageId,
     text: '',
-    image: imageUri,
+    image: imageUrl,
     user,
     createdAt: serverTimestamp(),
   });
@@ -128,14 +178,9 @@ export const listenToMessages = (
   );
 
   return onSnapshot(messagesQuery, (snapshot) => {
-      const messages = snapshot.docs.map((messageDoc: any) => {
-        const data = messageDoc.data();
-        return {
-          ...data,
-          // Gifted Chat needs Date objects or numbers for `createdAt`
-          createdAt: data.createdAt?.toDate()?.getTime() || Date.now(),
-        } as MessageDocument;
-      });
+      const messages = snapshot.docs.map((messageDoc: any) =>
+        normalizeMessageDocument(messageDoc.id, messageDoc.data())
+      );
       onUpdate(messages);
     }, (error) => {
       if ((error as any)?.code === 'firestore/permission-denied') {
