@@ -30,7 +30,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import type { RootState } from '../../src/store';
 import { setRoomMessages, removeMessage } from '../../src/store/chatSlice';
-import { sendMessage, listenToMessages, sendImageMessage, deleteMessageForEveryone } from '../../src/services/chatService';
+import { sendMessage, listenToMessages, sendImageMessage, deleteMessageForEveryone, deleteMessageForMe } from '../../src/services/chatService';
 import { markNotificationsForMatchAsRead } from '../../src/services/notificationService';
 import type { MessageDocument } from '../../src/types/user';
 import UserAvatar from '../../src/components/UserAvatar';
@@ -149,10 +149,6 @@ export default function ChatRoomScreen() {
   const [inputText, setInputText] = useState('');
   const [isStartingVideoCall, setIsStartingVideoCall] = useState(false);
   const giftedChatRef = useRef<any>(null);
-  // Tracks IDs of messages deleted locally ("Delete for Me").
-  // A Set stored in a ref so it survives Firestore listener callbacks
-  // without triggering re-renders.
-  const deletedLocalIds = useRef(new Set<string>());
   const storedMessages = useSelector(roomSelector);
   const [messages, setMessages] = useState<MessageDocument[]>(storedMessages);
   const chatUser = useMemo(
@@ -165,19 +161,21 @@ export default function ChatRoomScreen() {
   );
 
   // ── Real-time Listener ──
-  // Filter out any locally-deleted message IDs so the listener
-  // can never restore a message the user chose to hide.
+  // Passes authUser.uid so listenToMessages filters out messages where
+  // deletedFor[] contains the current user's UID. This is Firestore-backed
+  // so it persists across re-mounts (unlike a useRef).
   useEffect(() => {
-    if (!matchId) return;
-    const unsubscribe = listenToMessages(matchId, (newMessages) => {
-      const filtered = newMessages.filter(
-        (m) => !deletedLocalIds.current.has(m._id as string)
-      );
-      setMessages(filtered);
-      dispatch(setRoomMessages({ roomId: matchId, messages: filtered }));
-    });
+    if (!matchId || !authUser?.uid) return;
+    const unsubscribe = listenToMessages(
+      matchId,
+      (newMessages) => {
+        setMessages(newMessages);
+        dispatch(setRoomMessages({ roomId: matchId, messages: newMessages }));
+      },
+      authUser.uid,
+    );
     return () => unsubscribe();
-  }, [matchId, dispatch]);
+  }, [matchId, authUser?.uid, dispatch]);
 
   useEffect(() => {
     if (!authUser?.uid || !matchId) return;
@@ -342,8 +340,7 @@ export default function ChatRoomScreen() {
     );
   };
 
-  // ── Long-press delete — defined FIRST so renderBubble/renderMessageImage closures
-  //    capture the real function reference (const TDZ ordering fix) ──────────────
+  // ── Long-press delete — handleLongPressMessage ──────────────────────────────────
   const handleLongPressMessage = useCallback(
     (_context: any, message: any) => {
       const msg = message as MessageDocument;
@@ -351,6 +348,7 @@ export default function ChatRoomScreen() {
 
       const msgId = msg._id as string;
       const isOwn = msg.user?._id === authUser?.uid;
+      const uid = authUser?.uid ?? '';
       const options: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [];
 
       if (isOwn) {
@@ -367,8 +365,7 @@ export default function ChatRoomScreen() {
                   text: 'Delete',
                   style: 'destructive',
                   onPress: async () => {
-                    // Optimistic: remove locally immediately
-                    deletedLocalIds.current.add(msgId);
+                    // Optimistic removal from local state and Redux
                     setMessages((prev) => prev.filter((m) => m._id !== msgId));
                     dispatch(removeMessage({ roomId: matchId, messageId: msgId }));
                     try {
@@ -387,13 +384,18 @@ export default function ChatRoomScreen() {
       options.push({
         text: 'Delete for Me',
         style: 'destructive',
-        onPress: () => {
-          // Mark locally deleted so the Firestore listener never restores it
-          deletedLocalIds.current.add(msgId);
-          // Update the UI immediately
+        onPress: async () => {
+          // 1. Instant UI removal
           setMessages((prev) => prev.filter((m) => m._id !== msgId));
-          // Update Redux cache
           dispatch(removeMessage({ roomId: matchId, messageId: msgId }));
+          // 2. Write to Firestore so deletion survives re-mounts
+          //    Next listener snapshot will come back without this message
+          //    because listenToMessages filters deletedFor[] server-side.
+          try {
+            if (uid) await deleteMessageForMe(matchId, msgId, uid);
+          } catch (err) {
+            console.error('[Chat] deleteForMe failed:', err);
+          }
         },
       });
 
