@@ -25,8 +25,19 @@ const chatSlice = createSlice({
     removeRoomMessages: (state, action: PayloadAction<string>) => {
       delete state.rooms[action.payload];
     },
+    removeMessage: (
+      state,
+      action: PayloadAction<{ roomId: string; messageId: string }>
+    ) => {
+      const { roomId, messageId } = action.payload;
+      if (state.rooms[roomId]) {
+        state.rooms[roomId] = state.rooms[roomId].filter(
+          (msg) => msg._id !== messageId
+        );
+      }
+    },
   },
 });
 
-export const { setRoomMessages, clearChat, removeRoomMessages } = chatSlice.actions;
+export const { setRoomMessages, clearChat, removeRoomMessages, removeMessage } = chatSlice.actions;
 export default chatSlice.reducer;

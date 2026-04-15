@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { GiftedChat, Bubble, Send, InputToolbar, Day, IMessage } from 'react-native-gifted-chat';
@@ -28,8 +29,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 
 import type { RootState } from '../../src/store';
-import { setRoomMessages } from '../../src/store/chatSlice';
-import { sendMessage, listenToMessages, sendImageMessage } from '../../src/services/chatService';
+import { setRoomMessages, removeMessage } from '../../src/store/chatSlice';
+import { sendMessage, listenToMessages, sendImageMessage, deleteMessageForEveryone } from '../../src/services/chatService';
 import { markNotificationsForMatchAsRead } from '../../src/services/notificationService';
 import type { MessageDocument } from '../../src/types/user';
 import UserAvatar from '../../src/components/UserAvatar';
@@ -108,6 +109,7 @@ export default function ChatRoomScreen() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isStartingVideoCall, setIsStartingVideoCall] = useState(false);
+  const [imageLoadingStates, setImageLoadingStates] = useState<Record<string, boolean>>({});
   const giftedChatRef = useRef<any>(null);
   const storedMessages = useSelector(roomSelector);
   const [messages, setMessages] = useState<MessageDocument[]>(storedMessages);
@@ -322,17 +324,46 @@ export default function ChatRoomScreen() {
   };
 
   const renderMessageImage = (props: any) => {
-    const imageUri = props?.currentMessage?.image;
-    if (typeof imageUri !== 'string' || !imageUri.trim()) {
+    const currentMessage = props?.currentMessage;
+    const imageUri = currentMessage?.image;
+
+    // Nothing to show
+    if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) {
       return null;
     }
 
+    // Pending optimistic upload — show shimmer placeholder
+    if (currentMessage?.pending) {
+      return (
+        <View style={styles.messageImagePending}>
+          <ActivityIndicator color="rgba(255,255,255,0.6)" size="small" />
+        </View>
+      );
+    }
+
+    const msgId = currentMessage?._id as string;
+    const isLoading = imageLoadingStates[msgId] ?? true;
+
     return (
-      <TouchableOpacity activeOpacity={0.9}>
+      <TouchableOpacity activeOpacity={0.92} style={styles.messageImageWrap}>
+        {isLoading && (
+          <View style={styles.messageImageLoader}>
+            <ActivityIndicator color="rgba(255,255,255,0.5)" size="small" />
+          </View>
+        )}
         <Image
           source={{ uri: imageUri }}
-          style={styles.messageImage}
+          style={[styles.messageImage, isLoading && { opacity: 0 }]}
           resizeMode="cover"
+          onLoadStart={() =>
+            setImageLoadingStates((prev) => ({ ...prev, [msgId]: true }))
+          }
+          onLoadEnd={() =>
+            setImageLoadingStates((prev) => ({ ...prev, [msgId]: false }))
+          }
+          onError={() =>
+            setImageLoadingStates((prev) => ({ ...prev, [msgId]: false }))
+          }
         />
       </TouchableOpacity>
     );
@@ -384,6 +415,61 @@ export default function ChatRoomScreen() {
       textStyle={styles.dayText}
       wrapperStyle={styles.dayWrapper}
     />
+  );
+
+  // ── Long-press message delete ──
+  const handleLongPressMessage = useCallback(
+    (_context: any, message: any) => {
+      const msg = message as MessageDocument;
+      if (!msg?._id) return;
+
+      const isOwn = msg.user?._id === authUser?.uid;
+
+      const options: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [
+        {
+          text: 'Delete for Me',
+          style: 'destructive',
+          onPress: () => {
+            dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string }));
+          },
+        },
+      ];
+
+      if (isOwn) {
+        options.unshift({
+          text: 'Delete for Everyone',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Delete for Everyone?',
+              'This message will be permanently removed for both you and the other person.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    // Optimistic local removal
+                    dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string }));
+                    try {
+                      await deleteMessageForEveryone(matchId, msg._id as string, msg.image);
+                    } catch (err) {
+                      console.error('[Chat] Failed to delete message:', err);
+                      Alert.alert('Error', 'Could not delete the message. Please try again.');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        });
+      }
+
+      options.push({ text: 'Cancel', style: 'cancel' });
+
+      Alert.alert('Message Options', undefined as any, options as any);
+    },
+    [authUser?.uid, dispatch, matchId]
   );
 
   // Real-time presence
@@ -454,6 +540,7 @@ export default function ChatRoomScreen() {
           renderAvatar={null}
           renderInputToolbar={() => <View />}
           messagesContainerStyle={styles.messagesContainer}
+          onLongPress={handleLongPressMessage}
           {...({
             scrollToBottom: true,
             scrollToBottomStyle: styles.scrollToBottom,
@@ -718,12 +805,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
+  messageImageWrap: {
+    margin: 3,
+    borderRadius: 13,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  messageImageLoader: {
+    position: 'absolute',
+    inset: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
   messageImage: {
-    width: 150,
-    height: 100,
+    width: 220,
+    height: 165,
+    borderRadius: 13,
+  },
+  messageImagePending: {
+    width: 220,
+    height: 165,
     borderRadius: 13,
     margin: 3,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   timeTextRight: {
     color: 'rgba(255,255,255,0.5)',

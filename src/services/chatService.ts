@@ -8,9 +8,11 @@ import {
   limit,
   onSnapshot,
   serverTimestamp,
+  deleteDoc,
 } from '@react-native-firebase/firestore';
 import { getAuth } from '@react-native-firebase/auth';
 import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
+import { getStorage, ref, deleteObject } from '@react-native-firebase/storage';
 import { MessageDocument } from '../types/user';
 
 const db = getFirestore();
@@ -243,3 +245,34 @@ export const declineRequest = (params: {
   source: RequestSource;
   sourceId: string;
 }): Promise<RequestActionResponse> => callRequestAction('declineRequest', params);
+
+/**
+ * Permanently deletes a single message document from Firestore for all participants.
+ * If the message contained an image uploaded to Firebase Storage under
+ * `matches/{matchId}/messages/…`, that object is also deleted.
+ *
+ * Call this only for the current user's own messages.
+ */
+export const deleteMessageForEveryone = async (
+  matchId: string,
+  messageId: string,
+  imageUrl?: string,
+): Promise<void> => {
+  // 1. Delete the Firestore message document
+  const matchRef = doc(collection(db, 'matches'), matchId);
+  const messageRef = doc(collection(matchRef, 'messages'), messageId);
+  await deleteDoc(messageRef);
+
+  // 2. If there's an associated Storage image, try to remove it
+  if (imageUrl) {
+    try {
+      // Only delete if the URL belongs to our own Firebase Storage bucket
+      if (imageUrl.includes('firebasestorage.googleapis.com') && imageUrl.includes(`matches%2F${matchId}`)) {
+        const storageRef = ref(getStorage(), `matches/${matchId}/messages/${messageId}`);
+        await deleteObject(storageRef);
+      }
+    } catch {
+      // Object may already be gone — safe to swallow
+    }
+  }
+};

@@ -164,6 +164,7 @@ export interface MessageDocument {
   sent?: boolean;
   received?: boolean;
   pending?: boolean;
+  deletedFor?: string[]; // UIDs for whom this message is hidden locally
 }
 
 // ─── In-App Notifications ─────────────────────────────────────────────────────
