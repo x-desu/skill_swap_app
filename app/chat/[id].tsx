@@ -78,6 +78,45 @@ function selectRoomMessages(roomId: string) {
   return (state: RootState) => state.chat.rooms[roomId] ?? EMPTY_MESSAGES;
 }
 
+// ── Self-contained image component (manages its own loading state so
+//    GiftedChat FlatList memoisation cannot block re-renders) ──────────────────
+interface ChatImageProps {
+  uri: string;
+  onLongPress?: () => void;
+}
+const ChatImage = React.memo(({ uri, onLongPress }: ChatImageProps) => {
+  const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      style={styles.messageImageWrap}
+      onLongPress={onLongPress}
+      delayLongPress={400}
+    >
+      {loading && !hasError && (
+        <View style={styles.messageImageLoader}>
+          <ActivityIndicator color="rgba(255,255,255,0.5)" size="small" />
+        </View>
+      )}
+      {hasError ? (
+        <View style={[styles.messageImage, styles.messageImageError]}>
+          <Text style={styles.imageErrorText}>Image unavailable</Text>
+        </View>
+      ) : (
+        <Image
+          source={{ uri }}
+          style={[styles.messageImage, loading && { opacity: 0 }]}
+          resizeMode="cover"
+          onLoadStart={() => setLoading(true)}
+          onLoadEnd={() => setLoading(false)}
+          onError={() => { setLoading(false); setHasError(true); }}
+        />
+      )}
+    </TouchableOpacity>
+  );
+});
+
 export default function ChatRoomScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -109,7 +148,6 @@ export default function ChatRoomScreen() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [inputText, setInputText] = useState('');
   const [isStartingVideoCall, setIsStartingVideoCall] = useState(false);
-  const [imageLoadingStates, setImageLoadingStates] = useState<Record<string, boolean>>({});
   const giftedChatRef = useRef<any>(null);
   const storedMessages = useSelector(roomSelector);
   const [messages, setMessages] = useState<MessageDocument[]>(storedMessages);
@@ -295,45 +333,80 @@ export default function ChatRoomScreen() {
     );
   };
 
-  // ── Render Helpers ──
+  // -- Long-press delete -- defined FIRST so renderBubble/renderMessageImage closures
+  // capture the real function reference, not undefined (temporal dead zone problem).
+  const handleLongPressMessage = useCallback(
+    (_context: any, message: any) => {
+      const msg = message as MessageDocument;
+      if (!msg?._id) return;
 
-  const renderBubble = (props: any) => {
+      const isOwn = msg.user?._id === authUser?.uid;
+      const options: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [];
+
+      if (isOwn) {
+        options.push({
+          text: 'Delete for Everyone',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Delete for Everyone?',
+              'This will permanently delete the message for both you and the other person.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string }));
+                    try {
+                      await deleteMessageForEveryone(matchId, msg._id as string, msg.image);
+                    } catch (err) {
+                      console.error('[Chat] deleteForEveryone failed:', err);
+                      Alert.alert('Error', 'Could not delete the message. Please try again.');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        });
+      }
+
+      options.push({
+        text: 'Delete for Me',
+        style: 'destructive',
+        onPress: () => dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string })),
+      });
+
+      options.push({ text: 'Cancel', style: 'cancel' });
+      Alert.alert('Message Options', undefined as any, options as any);
+    },
+    [authUser?.uid, dispatch, matchId]
+  );
+
+  // -- Render Helpers --
+
+  const renderBubble = useCallback((props: any) => {
     const currentMessage = props?.currentMessage;
-    if (!currentMessage?.user?._id) {
-      return null;
-    }
-
+    if (!currentMessage?.user?._id) return null;
     return (
       <Bubble
         {...props}
-        wrapperStyle={{
-          right: styles.bubbleRight,
-          left: styles.bubbleLeft,
-        }}
-        textStyle={{
-          right: styles.bubbleTextRight,
-          left: styles.bubbleTextLeft,
-        }}
-        timeTextStyle={{
-          right: styles.timeTextRight,
-          left: styles.timeTextLeft,
-        }}
+        wrapperStyle={{ right: styles.bubbleRight, left: styles.bubbleLeft }}
+        textStyle={{ right: styles.bubbleTextRight, left: styles.bubbleTextLeft }}
+        timeTextStyle={{ right: styles.timeTextRight, left: styles.timeTextLeft }}
         containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
         onLongPress={handleLongPressMessage}
       />
     );
-  };
+  }, [handleLongPressMessage]);
 
-  const renderMessageImage = (props: any) => {
+  const renderMessageImage = useCallback((props: any) => {
     const currentMessage = props?.currentMessage;
     const imageUri = currentMessage?.image;
+    if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) return null;
 
-    // Nothing to show
-    if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) {
-      return null;
-    }
-
-    // Pending optimistic upload — show shimmer placeholder
+    // Pending optimistic upload -- local file URI, spinner until real URL arrives
     if (currentMessage?.pending) {
       return (
         <View style={styles.messageImagePending}>
@@ -342,39 +415,13 @@ export default function ChatRoomScreen() {
       );
     }
 
-    const msgId = currentMessage?._id as string;
-    // Default to false — only show spinner while the image is actively loading
-    const isLoading = imageLoadingStates[msgId] ?? false;
-
     return (
-      <TouchableOpacity
-        activeOpacity={0.92}
-        style={styles.messageImageWrap}
+      <ChatImage
+        uri={imageUri}
         onLongPress={() => handleLongPressMessage(null, currentMessage)}
-        delayLongPress={400}
-      >
-        {isLoading && (
-          <View style={styles.messageImageLoader}>
-            <ActivityIndicator color="rgba(255,255,255,0.5)" size="small" />
-          </View>
-        )}
-        <Image
-          source={{ uri: imageUri }}
-          style={[styles.messageImage, isLoading && { opacity: 0 }]}
-          resizeMode="cover"
-          onLoadStart={() =>
-            setImageLoadingStates((prev) => ({ ...prev, [msgId]: true }))
-          }
-          onLoadEnd={() =>
-            setImageLoadingStates((prev) => ({ ...prev, [msgId]: false }))
-          }
-          onError={() =>
-            setImageLoadingStates((prev) => ({ ...prev, [msgId]: false }))
-          }
-        />
-      </TouchableOpacity>
+      />
     );
-  };
+  }, [handleLongPressMessage]);
 
   // ── Manual send handler (bypasses GiftedChat send flow) ──
   const handleManualSend = useCallback(async () => {
@@ -416,68 +463,15 @@ export default function ChatRoomScreen() {
     onSend([msg]);
   }, [inputText, authUser, chatUser, onSend, dailyMessageCount, currentCredits]);
 
-  const renderDay = (props: any) => (
+  const renderDay = useCallback((props: any) => (
     <Day
       {...props}
       textStyle={styles.dayText}
       wrapperStyle={styles.dayWrapper}
     />
-  );
+  ), []);
 
-  // ── Long-press message delete ──
-  const handleLongPressMessage = useCallback(
-    (_context: any, message: any) => {
-      const msg = message as MessageDocument;
-      if (!msg?._id) return;
 
-      const isOwn = msg.user?._id === authUser?.uid;
-
-      const options: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [
-        {
-          text: 'Delete for Me',
-          style: 'destructive',
-          onPress: () => {
-            dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string }));
-          },
-        },
-      ];
-
-      if (isOwn) {
-        options.unshift({
-          text: 'Delete for Everyone',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Delete for Everyone?',
-              'This message will be permanently removed for both you and the other person.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: async () => {
-                    // Optimistic local removal
-                    dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string }));
-                    try {
-                      await deleteMessageForEveryone(matchId, msg._id as string, msg.image);
-                    } catch (err) {
-                      console.error('[Chat] Failed to delete message:', err);
-                      Alert.alert('Error', 'Could not delete the message. Please try again.');
-                    }
-                  },
-                },
-              ]
-            );
-          },
-        });
-      }
-
-      options.push({ text: 'Cancel', style: 'cancel' });
-
-      Alert.alert('Message Options', undefined as any, options as any);
-    },
-    [authUser?.uid, dispatch, matchId]
-  );
 
   // Real-time presence
   const { isOnline, lastActive } = useUserPresence(targetUid);
@@ -841,6 +835,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  messageImageError: {
+    margin: 3,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageErrorText: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
   },
   timeTextRight: {
     color: 'rgba(255,255,255,0.5)',
