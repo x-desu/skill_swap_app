@@ -845,9 +845,6 @@ const styles = StyleSheet.create({
   },
   msgBubble: {
     maxWidth: '78%',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    paddingBottom: 4,
   },
   msgTime: {
     fontSize: 10,
@@ -869,8 +866,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderBottomRightRadius: 6,
     marginBottom: 2,
-    paddingHorizontal: 2,
-    paddingVertical: 2,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
     shadowColor: COLORS.rosePrimary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
@@ -881,8 +879,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderBottomLeftRadius: 6,
     marginBottom: 2,
-    paddingHorizontal: 2,
-    paddingVertical: 2,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
   },
   bubbleTextRight: {
     color: '#fff',
