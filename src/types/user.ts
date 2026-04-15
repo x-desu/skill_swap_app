@@ -59,6 +59,13 @@ export interface UserDocument {
   // Timestamps
   createdAt: Timestamp;
   updatedAt: Timestamp;
+
+  // Daily Limitations
+  dailySwipes?: number;
+  dailyMessages?: number;
+  dailyRequests?: number;
+  dailyFollows?: number;
+  lastLimitResetAt?: Timestamp | null;
 }
 
 // ─── Swap Requests (Legacy - To be replaced by Matches) ───────────────────────

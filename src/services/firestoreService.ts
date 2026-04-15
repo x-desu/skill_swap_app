@@ -24,6 +24,7 @@ import {
   arrayUnion,
   arrayRemove,
   deleteDoc,
+  increment,
 } from '@react-native-firebase/firestore';
 import {
   UserDocument,
@@ -301,3 +302,41 @@ export const updateSwapStatus = (id: string, status: SwapStatus): Promise<void> 
  */
 export const deleteSwapRequest = (id: string): Promise<void> =>
   deleteDoc(doc(swapsCol(), id));
+
+// ─── Daily Limits ─────────────────────────────────────────────────────────────
+
+/**
+ * Check and reset daily limits if it's a new day.
+ */
+export const checkAndResetDailyLimits = async (uid: string): Promise<void> => {
+  const ref = doc(usersCol(), uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists) return;
+  
+  const data = snap.data();
+  const now = new Date();
+  const lastReset = data.lastLimitResetAt?.toDate() || new Date(0);
+  
+  if (
+    now.getFullYear() !== lastReset.getFullYear() ||
+    now.getMonth() !== lastReset.getMonth() ||
+    now.getDate() !== lastReset.getDate()
+  ) {
+    await updateDoc(ref, {
+      dailySwipes: 0,
+      dailyMessages: 0,
+      dailyRequests: 0,
+      dailyFollows: 0,
+      lastLimitResetAt: serverTimestamp(),
+    });
+  }
+};
+
+/**
+ * Increment a specific daily limit counter for the user.
+ */
+export const incrementDailyLimit = (uid: string, field: 'dailySwipes' | 'dailyMessages' | 'dailyRequests' | 'dailyFollows'): Promise<void> => {
+  return updateDoc(doc(usersCol(), uid), {
+    [field]: increment(1)
+  });
+};

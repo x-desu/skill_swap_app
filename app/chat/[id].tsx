@@ -9,6 +9,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { GiftedChat, Bubble, Send, InputToolbar, Day, IMessage } from 'react-native-gifted-chat';
@@ -34,6 +35,10 @@ import type { MessageDocument } from '../../src/types/user';
 import UserAvatar from '../../src/components/UserAvatar';
 import { useUserPresence, formatLastActive } from '../../src/hooks/useUserPresence';
 import { createVideoCallInvite } from '../../src/services/videoCallService';
+import { uploadChatImage } from '../../src/services/storageService';
+import { DAILY_FREE_LIMITS, ACTION_CREDIT_COSTS } from '../../src/constants/ActionLimits';
+import { spendCreditsOnServer } from '../../src/services/creditsService';
+import { checkAndResetDailyLimits, incrementDailyLimit } from '../../src/services/firestoreService';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -78,6 +83,10 @@ export default function ChatRoomScreen() {
   const params = useLocalSearchParams();
   const dispatch = useDispatch();
   const authUser = useSelector((state: RootState) => state.auth.user);
+  const profile = useSelector((state: RootState) => state.profile.profile);
+  
+  const dailyMessageCount = profile?.dailyMessages || 0;
+  const currentCredits = profile?.credits || 0;
 
   const matchId = params.id as string;
   const targetUid = params.targetUid as string;
@@ -102,6 +111,14 @@ export default function ChatRoomScreen() {
   const giftedChatRef = useRef<any>(null);
   const storedMessages = useSelector(roomSelector);
   const [messages, setMessages] = useState<MessageDocument[]>(storedMessages);
+  const chatUser = useMemo(
+    () => ({
+      _id: authUser?.uid ?? 'unknown-user',
+      name: authUser?.displayName ?? 'Me',
+      avatar: authUser?.photoURL ?? undefined,
+    }),
+    [authUser?.displayName, authUser?.photoURL, authUser?.uid]
+  );
 
   // ── Real-time Listener ──
   useEffect(() => {
@@ -118,6 +135,12 @@ export default function ChatRoomScreen() {
     void markNotificationsForMatchAsRead(authUser.uid, matchId);
   }, [authUser?.uid, matchId]);
 
+  useEffect(() => {
+    if (authUser?.uid) {
+      checkAndResetDailyLimits(authUser.uid).catch(console.error);
+    }
+  }, [authUser?.uid]);
+
   const onSend = useCallback(
     async (newMessages: IMessage[] = []) => {
       if (!matchId || !authUser) return;
@@ -133,20 +156,43 @@ export default function ChatRoomScreen() {
       try {
         await sendMessage(matchId, {
           ...(messageToSave as any),
-          user: {
-            _id: authUser.uid,
-            name: authUser.displayName || 'Me',
-            avatar: authUser.photoURL || undefined,
-          },
+          user: chatUser,
         });
+        incrementDailyLimit(authUser.uid, 'dailyMessages').catch(console.error);
       } catch (err) {
         console.error('Failed to send message:', err);
       }
     },
-    [matchId, authUser]
+    [matchId, authUser, chatUser]
   );
 
   const handlePickImage = async () => {
+    // Check limits
+    if (dailyMessageCount >= DAILY_FREE_LIMITS.MESSAGES) {
+      if (currentCredits < ACTION_CREDIT_COSTS.EXTRA_MESSAGE) {
+        Alert.alert('Out of Credits', 'You need credits to send more messages today.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Get Credits', onPress: () => router.push('/paywall') }
+        ]);
+        return;
+      }
+
+      const confirm = await new Promise((resolve) => {
+        Alert.alert('Spend Credit', `Spend ${ACTION_CREDIT_COSTS.EXTRA_MESSAGE} credit to send a message?`, [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Send', onPress: () => resolve(true) }
+        ]);
+      });
+      if (!confirm) return;
+
+      try {
+        await spendCreditsOnServer(ACTION_CREDIT_COSTS.EXTRA_MESSAGE, 'extra_message');
+      } catch (e) {
+        Alert.alert('Error', 'Failed to deduct credits.');
+        return;
+      }
+    }
+
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -157,28 +203,30 @@ export default function ChatRoomScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const imageUri = result.assets[0].uri;
+        const optimisticImageId = Math.random().toString(36).substring(7);
         
         // Send image message
         const imageMessage: any = {
-          _id: Math.random().toString(36).substring(7),
+          _id: optimisticImageId,
           createdAt: new Date(),
-          user: {
-            _id: authUser?.uid || '',
-            name: authUser?.displayName || 'Me',
-            avatar: authUser?.photoURL || undefined,
-          },
+          user: chatUser,
           image: imageUri,
+          pending: true,
         };
 
         setMessages((prev) => GiftedChat.append(prev as any, [imageMessage]) as MessageDocument[]);
 
         try {
-          await sendImageMessage(matchId, imageUri, {
-            _id: authUser?.uid || '',
-            name: authUser?.displayName || 'Me',
-            avatar: authUser?.photoURL || undefined,
-          });
+          const imageUrl = await uploadChatImage(matchId, chatUser._id, imageUri);
+          await sendImageMessage(matchId, imageUrl, chatUser);
+          incrementDailyLimit(authUser.uid, 'dailyMessages').catch(console.error);
+          setMessages((prev) =>
+            prev.filter((message) => message._id !== optimisticImageId)
+          );
         } catch (err) {
+          setMessages((prev) =>
+            prev.filter((message) => message._id !== optimisticImageId)
+          );
           console.error('Failed to send image:', err);
           Alert.alert('Error', 'Failed to send image');
         }
@@ -247,41 +295,88 @@ export default function ChatRoomScreen() {
 
   // ── Render Helpers ──
 
-  const renderBubble = (props: any) => (
-    <Bubble
-      {...props}
-      wrapperStyle={{
-        right: styles.bubbleRight,
-        left: styles.bubbleLeft,
-      }}
-      textStyle={{
-        right: styles.bubbleTextRight,
-        left: styles.bubbleTextLeft,
-      }}
-      timeTextStyle={{
-        right: styles.timeTextRight,
-        left: styles.timeTextLeft,
-      }}
-      containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
-    />
-  );
+  const renderBubble = (props: any) => {
+    const currentMessage = props?.currentMessage;
+    if (!currentMessage?.user?._id) {
+      return null;
+    }
+
+    return (
+      <Bubble
+        {...props}
+        wrapperStyle={{
+          right: styles.bubbleRight,
+          left: styles.bubbleLeft,
+        }}
+        textStyle={{
+          right: styles.bubbleTextRight,
+          left: styles.bubbleTextLeft,
+        }}
+        timeTextStyle={{
+          right: styles.timeTextRight,
+          left: styles.timeTextLeft,
+        }}
+        containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
+      />
+    );
+  };
+
+  const renderMessageImage = (props: any) => {
+    const imageUri = props?.currentMessage?.image;
+    if (typeof imageUri !== 'string' || !imageUri.trim()) {
+      return null;
+    }
+
+    return (
+      <TouchableOpacity activeOpacity={0.9}>
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.messageImage}
+          resizeMode="cover"
+        />
+      </TouchableOpacity>
+    );
+  };
 
   // ── Manual send handler (bypasses GiftedChat send flow) ──
-  const handleManualSend = useCallback(() => {
+  const handleManualSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text || !authUser) return;
+
+    // Check limits
+    if (dailyMessageCount >= DAILY_FREE_LIMITS.MESSAGES) {
+      if (currentCredits < ACTION_CREDIT_COSTS.EXTRA_MESSAGE) {
+        Alert.alert('Out of Credits', 'You need credits to send more messages today.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Get Credits', onPress: () => router.push('/paywall') }
+        ]);
+        return;
+      }
+
+      const confirm = await new Promise((resolve) => {
+        Alert.alert('Spend Credit', `Spend ${ACTION_CREDIT_COSTS.EXTRA_MESSAGE} credit to send a message?`, [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Send', onPress: () => resolve(true) }
+        ]);
+      });
+      if (!confirm) return;
+
+      try {
+        await spendCreditsOnServer(ACTION_CREDIT_COSTS.EXTRA_MESSAGE, 'extra_message');
+      } catch (e) {
+        Alert.alert('Error', 'Failed to deduct credits.');
+        return;
+      }
+    }
+
     const msg: IMessage = {
       _id: Math.random().toString(36).slice(2),
       text,
       createdAt: new Date(),
-      user: {
-        _id: authUser.uid,
-        name: authUser.displayName || 'Me',
-        avatar: authUser.photoURL || undefined,
-      },
+      user: chatUser,
     };
     onSend([msg]);
-  }, [inputText, authUser, onSend]);
+  }, [inputText, authUser, chatUser, onSend, dailyMessageCount, currentCredits]);
 
   const renderDay = (props: any) => (
     <Day
@@ -352,12 +447,9 @@ export default function ChatRoomScreen() {
         <GiftedChat
           messages={messages as any}
           onSend={(msgs) => onSend(msgs as IMessage[])}
-          user={{
-            _id: authUser.uid,
-            name: authUser.displayName || 'Me',
-            avatar: authUser.photoURL || undefined,
-          }}
+          user={chatUser}
           renderBubble={renderBubble}
+          renderMessageImage={renderMessageImage}
           renderDay={renderDay}
           renderAvatar={null}
           renderInputToolbar={() => <View />}
@@ -625,6 +717,13 @@ const styles = StyleSheet.create({
     color: '#f0f0f0',
     fontSize: 15,
     lineHeight: 20,
+  },
+  messageImage: {
+    width: 150,
+    height: 100,
+    borderRadius: 13,
+    margin: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   timeTextRight: {
     color: 'rgba(255,255,255,0.5)',

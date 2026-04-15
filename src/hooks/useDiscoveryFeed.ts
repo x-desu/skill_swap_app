@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   getFirestore,
   collection,
@@ -11,7 +11,7 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { UserDocument } from '../types/user';
 import { getSwipedUserIds } from '../services/matchingService';
-import { appendFeed, setIsPaginating, setSwipedIds } from '../store/discoverySlice';
+import { appendFeed, setIsPaginating, setSwipedIds, setFeed } from '../store/discoverySlice';
 import type { RootState } from '../store';
 
 /**
@@ -53,6 +53,50 @@ export const useDiscoveryFeed = (currentUid: string | null) => {
   const blockedUidRef = useRef<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!currentUid || authLoading) return;
+    setIsRefreshing(true);
+    setErrorCode(null);
+    try {
+      let currentSwipedIds = Object.keys(swipedIdsRef.current);
+      if (currentSwipedIds.length === 0) {
+        const fetchedIds = await getSwipedUserIds(currentUid);
+        dispatch(setSwipedIds(fetchedIds));
+        currentSwipedIds = fetchedIds;
+      }
+      const excludedIds = new Set([...currentSwipedIds, currentUid]);
+
+      const usersRef = collection(getFirestore(), 'users');
+      const q = query(
+        usersRef,
+        where('isProfileComplete', '==', true),
+        orderBy('rating', 'desc'),
+        limit(20)
+      );
+      const snapshot = await getDocs(q);
+
+      const fetchedUsers: UserDocument[] = [];
+      snapshot.docs.forEach((doc: any) => {
+        const data = doc.data() as UserDocument;
+        if (!excludedIds.has(data.uid)) {
+          fetchedUsers.push(data);
+        }
+      });
+      dispatch(setFeed(fetchedUsers));
+      setHasFetchedOnce(true);
+    } catch (err: any) {
+      if (err?.code === 'firestore/permission-denied') {
+        blockedUidRef.current = currentUid;
+        setErrorCode('firestore/permission-denied');
+      } else {
+        setErrorCode(err?.code ?? 'unknown');
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [currentUid, authLoading, dispatch]);
 
   // Trigger: only fires when the user changes or auth resolves.
   // Swipes no longer trigger this effect — feed.length removed from deps.
@@ -181,5 +225,7 @@ export const useDiscoveryFeed = (currentUid: string | null) => {
     loading,
     errorCode,
     hasLoaded: hasFetchedOnce || feed.length > 0,
+    refresh,
+    isRefreshing,
   };
 };

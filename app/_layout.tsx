@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { LogBox } from 'react-native';
 import { Stack } from 'expo-router';
 import { Provider, useDispatch } from 'react-redux';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -28,6 +29,10 @@ configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
   strict: false,
 });
+
+LogBox.ignoreLogs([
+  'Sending `onAnimatedValueUpdate` with no listeners registered.',
+]);
 
 GoogleSignin.configure({
   webClientId:
@@ -167,16 +172,20 @@ function AppNavigator() {
   );
 }
 
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Provider store={store}>
         <GluestackUIProvider mode="dark">
           <ThemeProvider>
-            <DataProvider>
-              <AppNavigator />
-              <IncomingCallBanner />
-            </DataProvider>
+            <BottomSheetModalProvider>
+              <DataProvider>
+                <AppNavigator />
+                <IncomingCallBanner />
+              </DataProvider>
+            </BottomSheetModalProvider>
           </ThemeProvider>
         </GluestackUIProvider>
       </Provider>

@@ -1,14 +1,16 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions,
-  ScrollView, TextInput, Animated, Alert,
+  ScrollView, TextInput, Animated, Alert, RefreshControl
 } from 'react-native';
+import { BottomSheetModal, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import Slider from '@react-native-community/slider';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bell, Grid3X3, Search as SearchIcon, MapPin, Check,
-  Gift, ArrowLeftRight, Star, Users,
+  Gift, ArrowLeftRight, Star, Users, Sparkles, Globe
 } from 'lucide-react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useRouter } from 'expo-router';
@@ -89,13 +91,19 @@ function AnimatedCard({
   return (
     <Animated.View style={[styles.cardContainer, { transform: [{ rotate }, { scale }, { translateY }], opacity }]}>
       <View style={styles.personCard}>
-        <UserAvatar
-          photoURL={person.photoURL}
-          displayName={person.displayName}
-          uid={person.uid}
-          size={CARD_WIDTH}
-          style={styles.cardImage}
-        />
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={styles.cardImageContainer}
+          onPress={() => router.push({ pathname: '/user/[id]', params: { id: person.uid } })}
+        >
+          <UserAvatar
+            photoURL={person.photoURL}
+            displayName={person.displayName}
+            uid={person.uid}
+            size={CARD_WIDTH}
+            style={styles.cardImage}
+          />
+        </TouchableOpacity>
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
           style={styles.cardGradient}
@@ -138,9 +146,14 @@ function AnimatedCard({
             activeOpacity={0.85}
             disabled={isSubmitting}
           >
-            <Text style={styles.proposeBtnText}>
-              {isSubmitting ? 'Sending...' : 'Propose Swap ✨'}
-            </Text>
+            {isSubmitting ? (
+              <Text style={styles.proposeBtnText}>Sending...</Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.proposeBtnText}>Propose Swap</Text>
+                <Sparkles color="#fff" size={16} />
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -164,14 +177,29 @@ export default function HomeScreen() {
   const dispatch = useDispatch();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [submittingTargetUids, setSubmittingTargetUids] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
   const scrollX = useRef(new Animated.Value(0)).current;
+
+  // Added Bottom Sheet and Radius State
+  const bottomSheetModalRef = useRef<BottomSheetModal>(null);
+  const snapPoints = useMemo(() => ['30%'], []);
+  const [searchRadius, setSearchRadius] = useState(10); // default to 10 miles
+
+  const handlePresentModalPress = useCallback(() => {
+    bottomSheetModalRef.current?.present();
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.6} />,
+    []
+  );
 
   const authUser = useSelector((s: RootState) => s.auth.user);
   // Prefer the live Firestore profile for photoURL (updated after profile-setup)
   const firestoreProfile = useSelector((s: RootState) => s.profile.profile);
   const displayPhoto = firestoreProfile?.photoURL ?? authUser?.photoURL ?? null;
   const displayName = firestoreProfile?.displayName ?? authUser?.displayName ?? null;
-  const { users: fetchedUsers, loading } = useDiscoveryFeed(authUser?.uid || null);
+  const { users: fetchedUsers, loading, refresh, isRefreshing } = useDiscoveryFeed(authUser?.uid || null);
   const { unreadCount } = useNotifications();
 
   const handleScroll = Animated.event(
@@ -179,15 +207,22 @@ export default function HomeScreen() {
     { useNativeDriver: true },
   );
 
-  const filteredUsers = selectedCategory === 'All'
-    ? fetchedUsers
-    : fetchedUsers.filter((u) =>
-        u.teachSkills?.some((s) =>
-          CATEGORY_SKILL_MAP[selectedCategory]?.some((k) =>
-            s.toLowerCase().includes(k),
-          ),
-        ),
-      );
+  const filteredUsers = fetchedUsers.filter((u) => {
+    const matchesCategory = selectedCategory === 'All' || u.teachSkills?.some((s) =>
+      CATEGORY_SKILL_MAP[selectedCategory]?.some((k) =>
+        s.toLowerCase().includes(k),
+      ),
+    );
+
+    const lowerQuery = searchQuery.toLowerCase().trim();
+    const matchesSearch = lowerQuery === '' || (
+      (u.displayName?.toLowerCase().includes(lowerQuery)) ||
+      (u.teachSkills?.some((s) => s.toLowerCase().includes(lowerQuery))) ||
+      (u.wantSkills?.some((s) => s.toLowerCase().includes(lowerQuery)))
+    );
+
+    return matchesCategory && matchesSearch;
+  });
 
   const handleProposeSwap = async (toUser: UserDocument) => {
     if (!authUser || submittingTargetUids[toUser.uid]) return;
@@ -208,7 +243,7 @@ export default function HomeScreen() {
           params: { matchId: match.id, targetUid: toUser.uid, targetName: toUser.displayName, targetPhoto: toUser.photoURL || '' },
         });
       } else {
-        Alert.alert('🎉 Swap Proposed!', `Your request was sent to ${toUser.displayName}.`);
+        Alert.alert('Swap Proposed!', `Your request was sent to ${toUser.displayName}.`);
       }
     } catch (e) {
       Alert.alert('Error', 'Could not send request. Please try again.');
@@ -223,16 +258,29 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: COLORS.bgBase }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={{ paddingBottom: 120 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refresh}
+            tintColor={COLORS.rosePrimary}
+            colors={[COLORS.rosePrimary]} // For Android
+          />
+        }
+      >
 
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <View style={styles.headerLeft}>
-            <UserAvatar
-              photoURL={displayPhoto}
-              displayName={displayName}
-              uid={authUser?.uid}
-              size={42}
-            />
+            <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} activeOpacity={0.8}>
+              <UserAvatar
+                photoURL={displayPhoto}
+                displayName={displayName}
+                uid={authUser?.uid}
+                size={42}
+              />
+            </TouchableOpacity>
             <View style={styles.headerText}>
               <Text style={styles.appName}>SkillSwap</Text>
               <Text style={styles.tagline}>Discovery</Text>
@@ -260,11 +308,13 @@ export default function HomeScreen() {
               style={styles.searchInput}
               placeholder="Search skills or people..."
               placeholderTextColor={COLORS.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
             />
           </BlurView>
-          <TouchableOpacity style={styles.nearbyBtn}>
+        <TouchableOpacity style={styles.nearbyBtn} onPress={handlePresentModalPress}>
             <MapPin color={COLORS.textSecondary} size={14} />
-            <Text style={styles.nearbyText}>Nearby</Text>
+            <Text style={styles.nearbyText}>{searchRadius} mi</Text>
           </TouchableOpacity>
         </View>
 
@@ -287,7 +337,7 @@ export default function HomeScreen() {
         </ScrollView>
 
         <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/discover')}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/profile')}>
             <Gift color={COLORS.rosePrimary} size={20} />
             <Text style={styles.actionText}>Offer Skill</Text>
           </TouchableOpacity>
@@ -316,7 +366,9 @@ export default function HomeScreen() {
           </Animated.ScrollView>
         ) : filteredUsers.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>🌐</Text>
+            <View style={{ marginBottom: 12 }}>
+              <Globe color="rgba(255,255,255,0.6)" size={48} />
+            </View>
             <Text style={styles.emptyText}>No people here yet</Text>
             <Text style={styles.emptySubtext}>
               {selectedCategory === 'All'
@@ -349,18 +401,63 @@ export default function HomeScreen() {
 
         <View style={[styles.sectionHeader, { marginTop: 32 }]}>
           <Text style={styles.sectionTitle}>Featured Skills</Text>
-          <TouchableOpacity><Text style={styles.seeAll}>See All</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/skills-directory')}>
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredRow}>
           {['UI Design', 'Python', 'Guitar', 'Spanish', 'Photography', 'Yoga'].map((skill) => (
-            <View key={skill} style={styles.skillChip}>
+            <TouchableOpacity 
+              key={skill} 
+              style={styles.skillChip}
+              onPress={() => {
+                router.push({ pathname: '/(tabs)/discover', params: { searchQuery: skill } });
+              }}
+            >
               <Star color={COLORS.rosePrimary} size={14} />
               <Text style={styles.skillChipText}>{skill}</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </ScrollView>
-
       </ScrollView>
+
+      <BottomSheetModal
+        ref={bottomSheetModalRef}
+        index={0}
+        snapPoints={snapPoints}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{ backgroundColor: COLORS.bgDeep }}
+        handleIndicatorStyle={{ backgroundColor: COLORS.textMuted }}
+      >
+        <View style={styles.sheetContent}>
+          <Text style={styles.sheetTitle}>Adjust Search Radius</Text>
+          <Text style={styles.sheetSubtitle}>Discover people within {searchRadius} miles</Text>
+          
+          <Slider
+            style={styles.slider}
+            minimumValue={1}
+            maximumValue={50}
+            step={1}
+            value={searchRadius}
+            onValueChange={setSearchRadius}
+            minimumTrackTintColor={COLORS.rosePrimary}
+            maximumTrackTintColor={COLORS.rose20}
+            thumbTintColor={COLORS.rosePrimary}
+          />
+          
+          <View style={styles.sliderLabels}>
+            <Text style={styles.sliderLabelText}>1 mi</Text>
+            <Text style={styles.sliderLabelText}>50 mi</Text>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.sheetConfirmBtn} 
+            onPress={() => bottomSheetModalRef.current?.dismiss()}
+          >
+            <Text style={styles.sheetConfirmText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </BottomSheetModal>
     </View>
   );
 }
@@ -434,9 +531,10 @@ const styles = StyleSheet.create({
   seeAll: { color: COLORS.rosePrimary, fontSize: 13, fontWeight: '600' },
   cardContainer: { width: CARD_WIDTH },
   personCard: { width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 24, overflow: 'hidden', backgroundColor: COLORS.bgDeep },
-  cardImage: { width: CARD_WIDTH, height: CARD_HEIGHT, position: 'absolute', top: 0, left: 0, borderRadius: 24 },
-  cardGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: CARD_HEIGHT * 0.6 },
-  cardContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20 },
+  cardImageContainer: { width: CARD_WIDTH, height: CARD_HEIGHT, position: 'absolute', top: 0, left: 0 },
+  cardImage: { width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 24 },
+  cardGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: CARD_HEIGHT * 0.6, pointerEvents: 'none' },
+  cardContent: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, pointerEvents: 'box-none' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
   cardName: { color: '#fff', fontSize: 20, fontWeight: '800' },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
@@ -481,4 +579,48 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.rose20, borderWidth: 1, borderColor: COLORS.rose30,
   },
   skillChipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  sheetContent: {
+    flex: 1,
+    padding: 24,
+    alignItems: 'center',
+  },
+  sheetTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  sheetSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    marginBottom: 32,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+  },
+  sliderLabels: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    marginBottom: 32,
+  },
+  sliderLabelText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sheetConfirmBtn: {
+    width: '100%',
+    backgroundColor: COLORS.rosePrimary,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  sheetConfirmText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });

@@ -28,6 +28,9 @@ const discoverySlice = createSlice({
     removeFeedItem: (state, action: PayloadAction<string>) => {
       state.feed = state.feed.filter(u => u.uid !== action.payload);
     },
+    setFeed: (state, action: PayloadAction<UserDocument[]>) => {
+      state.feed = action.payload;
+    },
     recordSwipeData: (state, action: PayloadAction<{ targetUid: string; type: 'like' | 'pass' }>) => {
       state.swipedIds[action.payload.targetUid] = action.payload.type;
     },
@@ -62,6 +65,7 @@ export const {
   setIsPaginating,
   setHasReachedEnd,
   clearDiscovery,
+  setFeed,
 } = discoverySlice.actions;
 
 export default discoverySlice.reducer;
