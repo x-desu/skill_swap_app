@@ -3,6 +3,7 @@ import {
   View,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Text,
   TextInput,
   FlatList,
@@ -13,7 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { GiftedChat, Bubble, Send, InputToolbar, Day, IMessage } from 'react-native-gifted-chat';
+import { GiftedChat, Send, InputToolbar, Day, IMessage } from 'react-native-gifted-chat';
 import { useDispatch, useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
@@ -74,6 +75,14 @@ const EMOJIS = [
   '👌', '🤌', '🤏', '✋', '🖐️', '👋', '💪', '🙏', '✨', '🔥',
 ];
 const EMPTY_MESSAGES: MessageDocument[] = [];
+
+function formatMessageTime(createdAt: number | Date | undefined): string {
+  if (!createdAt) return '';
+  const d = typeof createdAt === 'number' ? new Date(createdAt) : createdAt;
+  const h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h % 12 || 12}:${m} ${h >= 12 ? 'PM' : 'AM'}`;
+}
 function selectRoomMessages(roomId: string) {
   return (state: RootState) => state.chat.rooms[roomId] ?? EMPTY_MESSAGES;
 }
@@ -409,42 +418,67 @@ export default function ChatRoomScreen() {
 
   // ── Render Helpers ────────────────────────────────────────────────────────
 
-  const renderBubble = useCallback((props: any) => {
-    const cm = props?.currentMessage;
-    if (!cm?.user?._id) return null;
-    return (
-      <Bubble
-        {...props}
-        wrapperStyle={{ right: styles.bubbleRight, left: styles.bubbleLeft }}
-        textStyle={{ right: styles.bubbleTextRight, left: styles.bubbleTextLeft }}
-        timeTextStyle={{ right: styles.timeTextRight, left: styles.timeTextLeft }}
-        containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
-        onLongPress={handleLongPressMessage}
-      />
-    );
-  }, [handleLongPressMessage]);
+  // Completely custom message renderer — owns the ONLY Pressable on each row,
+  // so onLongPress fires reliably with no nested-touchable competition.
+  const renderMessage = useCallback((msgProps: any) => {
+    const cm = msgProps?.currentMessage;
+    if (!cm?._id || !cm?.user?._id) return null;
 
-  const renderMessageImage = useCallback((props: any) => {
-    const currentMessage = props?.currentMessage;
-    const imageUri = currentMessage?.image;
-    if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) return null;
-
-    // Pending optimistic upload -- local file URI, spinner until real URL arrives
-    if (currentMessage?.pending) {
-      return (
-        <View style={styles.messageImagePending}>
-          <ActivityIndicator color="rgba(255,255,255,0.6)" size="small" />
-        </View>
-      );
-    }
+    const isRight = String(cm.user._id) === String(authUser?.uid);
+    const hasImage = typeof cm.image === 'string' && cm.image.trim().length > 0;
+    const isPending = Boolean(cm.pending);
 
     return (
-      <ChatImage
-        uri={imageUri}
-        onLongPress={() => handleLongPressMessage(null, currentMessage)}
-      />
+      <View
+        style={[
+          styles.msgRow,
+          isRight ? styles.msgRowRight : styles.msgRowLeft,
+        ]}
+      >
+        <Pressable
+          delayLongPress={400}
+          onLongPress={() => handleLongPressMessage(null, cm)}
+          style={[
+            styles.msgBubble,
+            isRight ? styles.bubbleRight : styles.bubbleLeft,
+          ]}
+        >
+          {/* ── Image content ── */}
+          {hasImage && (
+            isPending ? (
+              <View style={styles.messageImagePending}>
+                <ActivityIndicator color="rgba(255,255,255,0.6)" size="small" />
+              </View>
+            ) : (
+              <ChatImage uri={cm.image} />
+            )
+          )}
+
+          {/* ── Text content ── */}
+          {!hasImage && cm.text ? (
+            <Text
+              style={[
+                styles.bubbleTextRight,
+                !isRight && styles.bubbleTextLeft,
+              ]}
+            >
+              {cm.text}
+            </Text>
+          ) : null}
+
+          {/* ── Timestamp ── */}
+          <Text
+            style={[
+              styles.msgTime,
+              isRight ? styles.msgTimeRight : styles.msgTimeLeft,
+            ]}
+          >
+            {formatMessageTime(cm.createdAt)}
+          </Text>
+        </Pressable>
+      </View>
     );
-  }, [handleLongPressMessage]);
+  }, [authUser?.uid, handleLongPressMessage]);
 
   // ── Manual send handler (bypasses GiftedChat send flow) ──
   const handleManualSend = useCallback(async () => {
@@ -558,8 +592,7 @@ export default function ChatRoomScreen() {
           messages={messages as any}
           onSend={(msgs) => onSend(msgs as IMessage[])}
           user={chatUser}
-          renderBubble={renderBubble}
-          renderMessageImage={renderMessageImage}
+          renderMessage={renderMessage}
           renderDay={renderDay}
           renderAvatar={null}
           renderInputToolbar={() => <View />}
@@ -796,6 +829,38 @@ const styles = StyleSheet.create({
   messagesContainer: {
     backgroundColor: COLORS.bgBase,
     paddingBottom: 4,
+  },
+
+  // ── Custom Message Rows (renderMessage) ──
+  msgRow: {
+    flexDirection: 'row',
+    marginVertical: 3,
+    paddingHorizontal: 8,
+  },
+  msgRowRight: {
+    justifyContent: 'flex-end',
+  },
+  msgRowLeft: {
+    justifyContent: 'flex-start',
+  },
+  msgBubble: {
+    maxWidth: '78%',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingBottom: 4,
+  },
+  msgTime: {
+    fontSize: 10,
+    marginTop: 3,
+    opacity: 0.55,
+  },
+  msgTimeRight: {
+    color: '#fff',
+    textAlign: 'right',
+  },
+  msgTimeLeft: {
+    color: '#ccc',
+    textAlign: 'left',
   },
 
   // ── Bubbles ──
