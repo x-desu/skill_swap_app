@@ -319,6 +319,7 @@ export default function ChatRoomScreen() {
           left: styles.timeTextLeft,
         }}
         containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
+        onLongPress={handleLongPressMessage}
       />
     );
   };
@@ -342,10 +343,16 @@ export default function ChatRoomScreen() {
     }
 
     const msgId = currentMessage?._id as string;
-    const isLoading = imageLoadingStates[msgId] ?? true;
+    // Default to false — only show spinner while the image is actively loading
+    const isLoading = imageLoadingStates[msgId] ?? false;
 
     return (
-      <TouchableOpacity activeOpacity={0.92} style={styles.messageImageWrap}>
+      <TouchableOpacity
+        activeOpacity={0.92}
+        style={styles.messageImageWrap}
+        onLongPress={() => handleLongPressMessage(null, currentMessage)}
+        delayLongPress={400}
+      >
         {isLoading && (
           <View style={styles.messageImageLoader}>
             <ActivityIndicator color="rgba(255,255,255,0.5)" size="small" />
@@ -813,7 +820,10 @@ const styles = StyleSheet.create({
   },
   messageImageLoader: {
     position: 'absolute',
-    inset: 0,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1,
