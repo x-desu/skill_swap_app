@@ -149,6 +149,10 @@ export default function ChatRoomScreen() {
   const [inputText, setInputText] = useState('');
   const [isStartingVideoCall, setIsStartingVideoCall] = useState(false);
   const giftedChatRef = useRef<any>(null);
+  // Tracks IDs of messages deleted locally ("Delete for Me").
+  // A Set stored in a ref so it survives Firestore listener callbacks
+  // without triggering re-renders.
+  const deletedLocalIds = useRef(new Set<string>());
   const storedMessages = useSelector(roomSelector);
   const [messages, setMessages] = useState<MessageDocument[]>(storedMessages);
   const chatUser = useMemo(
@@ -161,11 +165,16 @@ export default function ChatRoomScreen() {
   );
 
   // ── Real-time Listener ──
+  // Filter out any locally-deleted message IDs so the listener
+  // can never restore a message the user chose to hide.
   useEffect(() => {
     if (!matchId) return;
     const unsubscribe = listenToMessages(matchId, (newMessages) => {
-      setMessages(newMessages);
-      dispatch(setRoomMessages({ roomId: matchId, messages: newMessages }));
+      const filtered = newMessages.filter(
+        (m) => !deletedLocalIds.current.has(m._id as string)
+      );
+      setMessages(filtered);
+      dispatch(setRoomMessages({ roomId: matchId, messages: filtered }));
     });
     return () => unsubscribe();
   }, [matchId, dispatch]);
@@ -333,13 +342,14 @@ export default function ChatRoomScreen() {
     );
   };
 
-  // -- Long-press delete -- defined FIRST so renderBubble/renderMessageImage closures
-  // capture the real function reference, not undefined (temporal dead zone problem).
+  // ── Long-press delete — defined FIRST so renderBubble/renderMessageImage closures
+  //    capture the real function reference (const TDZ ordering fix) ──────────────
   const handleLongPressMessage = useCallback(
     (_context: any, message: any) => {
       const msg = message as MessageDocument;
       if (!msg?._id) return;
 
+      const msgId = msg._id as string;
       const isOwn = msg.user?._id === authUser?.uid;
       const options: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [];
 
@@ -347,19 +357,22 @@ export default function ChatRoomScreen() {
         options.push({
           text: 'Delete for Everyone',
           style: 'destructive',
-          onPress: () => {
+          onPress: () =>
             Alert.alert(
               'Delete for Everyone?',
-              'This will permanently delete the message for both you and the other person.',
+              'This permanently removes the message for both people.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Delete',
                   style: 'destructive',
                   onPress: async () => {
-                    dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string }));
+                    // Optimistic: remove locally immediately
+                    deletedLocalIds.current.add(msgId);
+                    setMessages((prev) => prev.filter((m) => m._id !== msgId));
+                    dispatch(removeMessage({ roomId: matchId, messageId: msgId }));
                     try {
-                      await deleteMessageForEveryone(matchId, msg._id as string, msg.image);
+                      await deleteMessageForEveryone(matchId, msgId, msg.image);
                     } catch (err) {
                       console.error('[Chat] deleteForEveryone failed:', err);
                       Alert.alert('Error', 'Could not delete the message. Please try again.');
@@ -367,37 +380,53 @@ export default function ChatRoomScreen() {
                   },
                 },
               ]
-            );
-          },
+            ),
         });
       }
 
       options.push({
         text: 'Delete for Me',
         style: 'destructive',
-        onPress: () => dispatch(removeMessage({ roomId: matchId, messageId: msg._id as string })),
+        onPress: () => {
+          // Mark locally deleted so the Firestore listener never restores it
+          deletedLocalIds.current.add(msgId);
+          // Update the UI immediately
+          setMessages((prev) => prev.filter((m) => m._id !== msgId));
+          // Update Redux cache
+          dispatch(removeMessage({ roomId: matchId, messageId: msgId }));
+        },
       });
 
       options.push({ text: 'Cancel', style: 'cancel' });
-      Alert.alert('Message Options', undefined as any, options as any);
+      // NOTE: second arg must be '' not undefined — undefined silently
+      // fails Alert on iOS in React Native 0.73+
+      Alert.alert('Message Options', '', options as any);
     },
     [authUser?.uid, dispatch, matchId]
   );
 
-  // -- Render Helpers --
+  // ── Render Helpers ────────────────────────────────────────────────────────
 
   const renderBubble = useCallback((props: any) => {
-    const currentMessage = props?.currentMessage;
-    if (!currentMessage?.user?._id) return null;
+    const cm = props?.currentMessage;
+    if (!cm?.user?._id) return null;
+    // Outer TouchableOpacity acts as a safe fallback long-press handler
+    // in case GiftedChat's Bubble consumes the touch before surfacing onLongPress.
     return (
-      <Bubble
-        {...props}
-        wrapperStyle={{ right: styles.bubbleRight, left: styles.bubbleLeft }}
-        textStyle={{ right: styles.bubbleTextRight, left: styles.bubbleTextLeft }}
-        timeTextStyle={{ right: styles.timeTextRight, left: styles.timeTextLeft }}
-        containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
-        onLongPress={handleLongPressMessage}
-      />
+      <TouchableOpacity
+        activeOpacity={1}
+        delayLongPress={400}
+        onLongPress={() => handleLongPressMessage(null, cm)}
+      >
+        <Bubble
+          {...props}
+          wrapperStyle={{ right: styles.bubbleRight, left: styles.bubbleLeft }}
+          textStyle={{ right: styles.bubbleTextRight, left: styles.bubbleTextLeft }}
+          timeTextStyle={{ right: styles.timeTextRight, left: styles.timeTextLeft }}
+          containerToPreviousStyle={{ right: { borderTopRightRadius: 18 }, left: { borderTopLeftRadius: 18 } }}
+          onLongPress={handleLongPressMessage}
+        />
+      </TouchableOpacity>
     );
   }, [handleLongPressMessage]);
 
