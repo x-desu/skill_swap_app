@@ -6,6 +6,7 @@ import { MapPin, ArrowLeft } from 'lucide-react-native';
 import { getUserProfile } from '../../src/services/firestoreService';
 import type { UserDocument } from '../../src/types/user';
 import UserAvatar from '../../src/components/UserAvatar';
+import UserProfileSkeleton from '../../src/components/skeletons/UserProfileSkeleton';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -43,8 +44,8 @@ export default function UserProfileScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.rosePrimary} />
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <UserProfileSkeleton show />
       </View>
     );
   }

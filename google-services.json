@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "491963117666-qkp11g79vfpte6uuvcj9upb0b9bmqor6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.skillswap.app",
+            "certificate_hash": "c6817a1d7e50a149eba98e038a59f5effb06c7c9"
+          }
+        },
+        {
           "client_id": "491963117666-g7ub97qg93e3k83u105bg4iiqcd5fp2q.apps.googleusercontent.com",
           "client_type": 3
         }

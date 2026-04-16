@@ -53,7 +53,7 @@ export const recordSkillUsage = async (
   const ref = doc(skillsCol(), id);
   const snap = await getDoc(ref);
 
-  if (!snap.exists) {
+  if (!snap.exists()) {
     await setDoc(ref, {
       name: skillName,
       nameLower: skillName.toLowerCase(),

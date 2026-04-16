@@ -21,6 +21,7 @@ import { likeUser } from '../../src/services/matchingService';
 import { removeFeedItem, recordSwipeData } from '../../src/store/discoverySlice';
 import UserAvatar from '../../src/components/UserAvatar';
 import type { UserDocument } from '../../src/types/user';
+import HomeScreenSkeleton from '../../src/components/skeletons/HomeScreenSkeleton';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.78;
@@ -355,15 +356,7 @@ export default function HomeScreen() {
         </View>
 
         {loading ? (
-          <Animated.ScrollView
-            horizontal
-            scrollEnabled={false}
-            contentContainerStyle={{ paddingHorizontal: SIDE_PADDING, gap: CARD_GAP }}
-          >
-            {[0, 1].map((i) => (
-              <SkeletonCard key={i} index={i} scrollX={scrollX} />
-            ))}
-          </Animated.ScrollView>
+          <HomeScreenSkeleton show={loading} />
         ) : filteredUsers.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={{ marginBottom: 12 }}>
@@ -399,26 +392,30 @@ export default function HomeScreen() {
           </Animated.ScrollView>
         )}
 
-        <View style={[styles.sectionHeader, { marginTop: 32 }]}>
-          <Text style={styles.sectionTitle}>Featured Skills</Text>
-          <TouchableOpacity onPress={() => router.push('/skills-directory')}>
-            <Text style={styles.seeAll}>See All</Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredRow}>
-          {['UI Design', 'Python', 'Guitar', 'Spanish', 'Photography', 'Yoga'].map((skill) => (
-            <TouchableOpacity 
-              key={skill} 
-              style={styles.skillChip}
-              onPress={() => {
-                router.push({ pathname: '/(tabs)/discover', params: { searchQuery: skill } });
-              }}
-            >
-              <Star color={COLORS.rosePrimary} size={14} />
-              <Text style={styles.skillChipText}>{skill}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {!loading && (
+          <>
+            <View style={[styles.sectionHeader, { marginTop: 32 }]}>
+              <Text style={styles.sectionTitle}>Featured Skills</Text>
+              <TouchableOpacity onPress={() => router.push('/skills-directory')}>
+                <Text style={styles.seeAll}>See All</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredRow}>
+              {['UI Design', 'Python', 'Guitar', 'Spanish', 'Photography', 'Yoga'].map((skill) => (
+                <TouchableOpacity 
+                  key={skill} 
+                  style={styles.skillChip}
+                  onPress={() => {
+                    router.push({ pathname: '/(tabs)/discover', params: { searchQuery: skill } });
+                  }}
+                >
+                  <Star color={COLORS.rosePrimary} size={14} />
+                  <Text style={styles.skillChipText}>{skill}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
       </ScrollView>
 
       <BottomSheetModal

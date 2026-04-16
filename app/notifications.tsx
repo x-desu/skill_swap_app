@@ -16,6 +16,7 @@ import { Bell, Trash2, ArrowLeft, MessageSquare, Handshake, Info, ShieldAlert } 
 import { useNotifications } from '../src/hooks/useNotifications';
 import { AppNotification } from '../src/types/user';
 import { openNotificationDestination } from '../src/services/notificationService';
+import NotificationsSkeleton from '../src/components/skeletons/NotificationsSkeleton';
 
 // Color Theme matching home.tsx
 const COLORS = {
@@ -209,9 +210,7 @@ export default function NotificationsScreen() {
 
       {/* ── List ── */}
       {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={COLORS.rosePrimary} size="large" />
-        </View>
+        <NotificationsSkeleton show={isLoading} />
       ) : notifications.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconCircle}>

@@ -7,6 +7,7 @@ import { Wallet, Crown, Bell, MessageSquare, ChevronRight, Plus } from 'lucide-r
 import type { RootState } from '../../src/store';
 import { useSubscriptionStatus } from '../../src/hooks/useSubscriptionStatus';
 import UserAvatar from '../../src/components/UserAvatar';
+import WalletSkeleton from '../../src/components/skeletons/WalletSkeleton';
 
 export default function WalletScreen() {
     const router = useRouter();
@@ -17,8 +18,8 @@ export default function WalletScreen() {
 
     if (!authUser || !profile) {
         return (
-            <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-                <ActivityIndicator size="large" color={COLORS.rosePrimary} />
+            <View style={[styles.container, { paddingTop: insets.top }]}>
+                <WalletSkeleton show />
             </View>
         );
     }

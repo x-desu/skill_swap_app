@@ -6,6 +6,7 @@ import { MapPin, Settings, Edit2, Plus, Crown, CreditCard, ChevronRight } from '
 import { router } from 'expo-router';
 import type { RootState } from '../../src/store';
 import UserAvatar from '../../src/components/UserAvatar';
+import UserProfileSkeleton from '../../src/components/skeletons/UserProfileSkeleton';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -26,8 +27,8 @@ export default function ProfileScreen() {
 
     if (!currentUser) {
         return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color={COLORS.rosePrimary} />
+            <View style={[styles.container, { paddingTop: insets.top }]}>
+                <UserProfileSkeleton show />
             </View>
         );
     }

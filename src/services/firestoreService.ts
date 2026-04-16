@@ -54,17 +54,25 @@ export const upsertUserProfile = async (
   const ref = doc(usersCol(), uid);
   const snap = await getDoc(ref);
 
-  if (snap.data() !== undefined) {
-    // Document exists — only update the specific fields provided, 
-    // but filter out empty/null values to avoid wiping out a completed profile.
-    const updateData: any = { updatedAt: serverTimestamp() };
-    if (data.email) updateData.email = data.email;
-    if (data.displayName) updateData.displayName = data.displayName;
+  if (snap.exists()) {
+    // Document exists — merge all supplied fields into the existing document.
+    // Using { merge: true } ensures we never wipe fields the caller didn't supply.
+    // This correctly persists ALL fields including isProfileComplete, teachSkills, etc.
+    const updateData: Record<string, any> = {
+      ...data,
+      updatedAt: serverTimestamp(),
+    };
+
+    // If photoURL is being set, also flag hasPhoto
     if (data.photoURL) {
-      updateData.photoURL = data.photoURL;
       updateData.hasPhoto = true;
     }
-    
+
+    // Remove undefined values — Firestore rejects them
+    Object.keys(updateData).forEach((k) => {
+      if (updateData[k] === undefined) delete updateData[k];
+    });
+
     await updateDoc(ref, updateData);
   } else {
     // New document — inject all required default values
@@ -94,7 +102,7 @@ export const upsertUserProfile = async (
  */
 export const getUserProfile = async (uid: string): Promise<UserDocument | null> => {
   const snap = await getDoc(doc(usersCol(), uid));
-  if (!snap.exists) return null;
+  if (!snap.exists()) return null;
   return { ...(snap.data() as UserDocument), uid: snap.id };
 };
 
@@ -107,7 +115,7 @@ export const listenToUserProfile = (
   callback: (user: UserDocument | null) => void,
 ): (() => void) =>
   onSnapshot(doc(usersCol(), uid), (snap) => {
-      if (!snap.exists) {
+      if (!snap.exists()) {
         callback(null);
         return;
       }
@@ -311,9 +319,11 @@ export const deleteSwapRequest = (id: string): Promise<void> =>
 export const checkAndResetDailyLimits = async (uid: string): Promise<void> => {
   const ref = doc(usersCol(), uid);
   const snap = await getDoc(ref);
-  if (!snap.exists) return;
-  
+  if (!snap.exists()) return;
+
   const data = snap.data();
+  if (!data) return;
+
   const now = new Date();
   const lastReset = data.lastLimitResetAt?.toDate() || new Date(0);
   
