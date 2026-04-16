@@ -21,6 +21,7 @@ import {
 } from '../../src/hooks/useSwapsData';
 import { acceptRequest, declineRequest, deleteChatThread } from '../../src/services/chatService';
 import { removeRoomMessages } from '../../src/store/chatSlice';
+import MatchesListSkeleton from '../../src/components/skeletons/MatchesListSkeleton';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -363,62 +364,58 @@ export default function MatchesScreen() {
       ? 'No messages yet. Match with someone to start chatting.'
       : 'No swap requests right now. New requests will appear here.';
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={COLORS.rosePrimary} />
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Text style={styles.title}>Swaps</Text>
       <SegmentedControl value={activeSegment} onChange={setActiveSegment} />
 
-      <FlatList<SwapListRow>
-        data={activeData}
-        key={activeSegment}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) =>
-          activeSegment === 'messages' && 'matchId' in item ? (
-            <MessageRow
-              item={item}
-              isDeleting={deletingMatchId === item.matchId}
-              onPress={() =>
-                router.push({
-                  pathname: '/chat/[id]',
-                  params: {
-                    id: item.matchId,
-                    targetUid: item.targetUid,
-                    name: item.title,
-                    photoURL: item.photoURL || '',
-                  },
-                })
-              }
-              onDelete={() => handleDeletePress(item)}
-            />
-          ) : 'direction' in item ? (
-            <RequestRow
-              item={item}
-              isActing={requestActionId === item.id}
-              onAccept={() => {
-                void handleAcceptRequest(item);
-              }}
-              onDecline={() => {
-                void handleDeclineRequest(item);
-              }}
-            />
-          ) : null
-        }
-        contentContainerStyle={[
-          styles.listContent,
-          activeData.length === 0 && styles.emptyListContent,
-        ]}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListEmptyComponent={<Text style={styles.emptyText}>{emptyCopy}</Text>}
-        showsVerticalScrollIndicator={false}
-      />
+      {isLoading ? (
+        <MatchesListSkeleton show={isLoading} />
+      ) : (
+        <FlatList<SwapListRow>
+          data={activeData}
+          key={activeSegment}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) =>
+            activeSegment === 'messages' && 'matchId' in item ? (
+              <MessageRow
+                item={item}
+                isDeleting={deletingMatchId === item.matchId}
+                onPress={() =>
+                  router.push({
+                    pathname: '/chat/[id]',
+                    params: {
+                      id: item.matchId,
+                      targetUid: item.targetUid,
+                      name: item.title,
+                      photoURL: item.photoURL || '',
+                    },
+                  })
+                }
+                onDelete={() => handleDeletePress(item)}
+              />
+            ) : 'direction' in item ? (
+              <RequestRow
+                item={item}
+                isActing={requestActionId === item.id}
+                onAccept={() => {
+                  void handleAcceptRequest(item);
+                }}
+                onDecline={() => {
+                  void handleDeclineRequest(item);
+                }}
+              />
+            ) : null
+          }
+          contentContainerStyle={[
+            styles.listContent,
+            activeData.length === 0 && styles.emptyListContent,
+          ]}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListEmptyComponent={<Text style={styles.emptyText}>{emptyCopy}</Text>}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 }

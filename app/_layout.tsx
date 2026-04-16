@@ -94,8 +94,25 @@ function AppNavigator() {
 
           profileUnsubscribe = listenToUserProfile(firebaseUser.uid, (doc) => {
             if (doc) {
+              // ── Auto-heal: fix existing users whose isProfileComplete got stuck at false ──
+              // This happened because the old upsertUserProfile update-branch had a field
+              // whitelist that never wrote isProfileComplete=true to Firestore.
+              // If the profile looks complete (has name + skills), repair it silently.
+              const looksComplete =
+                !doc.isProfileComplete &&
+                !!doc.displayName?.trim() &&
+                (doc.teachSkills?.length ?? 0) > 0 &&
+                (doc.wantSkills?.length ?? 0) > 0;
+
+              if (looksComplete) {
+                console.log('[SkillSwap Auth] Auto-healing isProfileComplete flag...');
+                upsertUserProfile(firebaseUser.uid, { isProfileComplete: true }).catch(console.error);
+              }
+
               dispatch(setProfile(doc));
-              dispatch(setProfileComplete(doc.isProfileComplete ?? false));
+              // If we detected it looks complete, treat as complete immediately so
+              // the user isn't briefly redirected to profile-setup while the write fires.
+              dispatch(setProfileComplete(looksComplete ? true : (doc.isProfileComplete ?? false)));
             }
             
             // Release the loading gate exactly once on the first snapshot

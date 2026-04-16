@@ -62,27 +62,50 @@ export const requestNotificationPermissions = async (
       return null;
     }
 
-    // 2. Request permissions
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
+    // 2. Request permissions — wrapped separately so aps-environment issues
+    //    don't crash the app (requires Push Notifications capability in Xcode)
+    let finalStatus: string = 'undetermined';
+    try {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      finalStatus = existingStatus;
 
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    console.log('Notification permission status:', finalStatus);
-
-    if (finalStatus !== 'granted') {
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+    } catch (permError: any) {
+      const msg = permError?.message || String(permError);
+      if (msg.includes('aps-environment')) {
+        // Missing Xcode entitlement — harmless for dev, fix by adding Push
+        // Notifications capability in Xcode → Signing & Capabilities
+        console.warn(
+          '[Notifications] Push Notifications entitlement missing in Xcode.\n' +
+          'Fix: Xcode → SkillSwap target → Signing & Capabilities → + Capability → Push Notifications.\n' +
+          'App will work normally; only push notifications are disabled until fixed.'
+        );
+      } else {
+        console.warn('[Notifications] Permission request failed:', msg);
+      }
       return null;
     }
 
-    // 3. Get the push token
-    // Using getExpoPushTokenAsync().data as requested
-    const token = (await Notifications.getExpoPushTokenAsync()).data;
-    console.log("PUSH TOKEN:", token);
+    console.log('[Notifications] Permission status:', finalStatus);
+    if (finalStatus !== 'granted') return null;
 
-    // 4. Store token in user profile
+    // 3. Get the Expo push token (projectId required for physical devices)
+    let token: string | null = null;
+    try {
+      const result = await Notifications.getExpoPushTokenAsync({
+        projectId: 'your-expo-project-id', // replace with value from app.json > extra.eas.projectId
+      });
+      token = result.data;
+      console.log('[Notifications] Push token:', token);
+    } catch (tokenError: any) {
+      console.warn('[Notifications] Could not get push token:', tokenError?.message);
+      return null;
+    }
+
+    // 4. Store token in Firestore
     if (token && userUid) {
       await upsertUserProfile(userUid, {
         pushToken: token,
@@ -90,7 +113,7 @@ export const requestNotificationPermissions = async (
       });
     }
 
-    // Configure Android channel
+    // 5. Configure Android notification channel
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
         name: 'default',
@@ -102,7 +125,7 @@ export const requestNotificationPermissions = async (
 
     return token;
   } catch (error) {
-    console.error('Error requesting notification permissions:', error);
+    console.warn('[Notifications] requestNotificationPermissions error (non-fatal):', error);
     return null;
   }
 };
@@ -297,7 +320,7 @@ export const markNotificationAsRead = async (uid: string, notificationId: string
   try {
     const notifRef = doc(db(), 'notifications', notificationId);
     const snap = await getDoc(notifRef);
-    if (!snap.exists) return; // Doc already deleted or doesn't exist
+    if (!snap.exists()) return; // Doc already deleted or doesn't exist
 
     await updateDoc(notifRef, { read: true });
   } catch (err) {
@@ -370,7 +393,7 @@ export const deleteNotification = async (uid: string, notificationId: string): P
   try {
     const notifRef = doc(db(), 'notifications', notificationId);
     const snap = await getDoc(notifRef);
-    if (!snap.exists) return;
+    if (!snap.exists()) return;
 
     await deleteDoc(notifRef);
   } catch (err) {

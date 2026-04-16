@@ -9,6 +9,7 @@ import BottomSheet from '@gorhom/bottom-sheet';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../../src/store';
 import { useTheme } from '../../src/context/ThemeContext';
+import DiscoverCardSkeleton from '../../src/components/skeletons/DiscoverCardSkeleton';
 import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
 import { useDiscoverFilters } from '../../src/hooks/useDiscoverFilters';
 import { DAILY_FREE_LIMITS, ACTION_CREDIT_COSTS } from '../../src/constants/ActionLimits';
@@ -229,14 +230,8 @@ export default function DiscoverScreen() {
             </View>
           </View>
 
-          {shouldShowLoading ? (
-            <View style={[styles.center, { flex: 1 }]}>
-              <Text style={{ color: '#aaa', fontSize: 16 }}>Finding local skill swapers...</Text>
-            </View>
-          ) : !isScreenReady ? (
-            <View style={[styles.center, { flex: 1 }]}>
-              <Text style={{ color: '#aaa', fontSize: 16 }}>Loading...</Text>
-            </View>
+          {shouldShowLoading || !isScreenReady ? (
+            <DiscoverCardSkeleton show />
           ) : !hasUsers && hasLoaded ? (
             <View style={[styles.center, { flex: 1 }]}>
               <Text style={[styles.noMoreText, { color: colors.text }]}>No more swapers nearby!</Text>
