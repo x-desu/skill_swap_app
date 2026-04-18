@@ -28,6 +28,10 @@ LogBox.ignoreLogs([
   'Sending `onAnimatedValueUpdate` with no listeners registered.',
 ]);
 
+LogBox.ignoreLogs([
+  'Sending `onAnimatedValueUpdate` with no listeners registered.',
+]);
+
 GoogleSignin.configure({
   webClientId:
     '491963117666-g7ub97qg93e3k83u105bg4iiqcd5fp2q.apps.googleusercontent.com',
@@ -182,6 +186,8 @@ function AppNavigator() {
     </Stack>
   );
 }
+
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
 export default function RootLayout() {
   return (
