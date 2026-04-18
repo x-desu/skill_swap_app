@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/skillswap-icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/skillswap-icon.png",
       "resizeMode": "contain",
@@ -19,7 +19,8 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "SkillSwap needs access to your location to automatically determine your city and country."
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "package": "com.skillswap.app",
@@ -29,7 +30,21 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.WAKE_LOCK",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
       "favicon": "./assets/skillswap-icon.png"
@@ -77,7 +92,12 @@
       "@config-plugins/react-native-webrtc"
     ],
     "extra": {
-      "razorpayKeyId": "rzp_live_SX039qZ9OOIngV"
-    }
+      "razorpayKeyId": "rzp_live_SX039qZ9OOIngV",
+      "router": {},
+      "eas": {
+        "projectId": "6842636a-67df-4aed-8533-8e686f247a15"
+      }
+    },
+    "owner": "desudesai"
   }
 }

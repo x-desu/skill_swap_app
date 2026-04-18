@@ -19,16 +19,10 @@ import {
 } from '../src/services/notificationService';
 import DataProvider from '../src/components/DataProvider';
 import IncomingCallBanner from '../src/components/IncomingCallBanner';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import '../global.css';
-import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
-// GiftedChat v3.3.2 calls useKeyboardAnimation unconditionally during render,
-// which triggers Reanimated strict mode warnings we cannot fix without patching
-// the library source. Disable strict mode globally as the recommended workaround.
-configureReanimatedLogger({
-  level: ReanimatedLogLevel.warn,
-  strict: false,
-});
+
 
 LogBox.ignoreLogs([
   'Sending `onAnimatedValueUpdate` with no listeners registered.',
@@ -36,7 +30,7 @@ LogBox.ignoreLogs([
 
 GoogleSignin.configure({
   webClientId:
-    '491963117666-lba7fa7u1ueilv6bfttfph43bmvl01qe.apps.googleusercontent.com',
+    '491963117666-g7ub97qg93e3k83u105bg4iiqcd5fp2q.apps.googleusercontent.com',
 });
 
 function AppNavigator() {
@@ -188,8 +182,6 @@ function AppNavigator() {
     </Stack>
   );
 }
-
-import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
 export default function RootLayout() {
   return (

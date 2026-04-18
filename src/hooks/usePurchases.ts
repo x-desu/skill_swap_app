@@ -56,7 +56,9 @@ export function usePurchases(uid: string | null): UsePurchasesReturn {
       // Initialize RevenueCat
       const initialized = await initRevenueCat();
       if (!initialized) {
-        throw new Error('Failed to initialize RevenueCat');
+        setCustomerInfo(null);
+        setOfferings(null);
+        return;
       }
 
       // Login user
@@ -70,7 +72,6 @@ export function usePurchases(uid: string | null): UsePurchasesReturn {
       const offeringsData = await Purchases.getOfferings();
       setOfferings(offeringsData);
     } catch (err) {
-      console.error('[usePurchases] Error loading data:', err);
       setError(err instanceof Error ? err : new Error('Unknown error'));
     } finally {
       setIsLoading(false);

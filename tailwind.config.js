@@ -1,7 +1,5 @@
-const { withGluestackUI } = require("@gluestack-ui/nativewind-utils/withGluestackUI");
-
 /** @type {import('tailwindcss').Config} */
-module.exports = withGluestackUI({
+module.exports = {
     content: [
         "./app/**/*.{js,jsx,ts,tsx}",
         "./src/**/*.{js,jsx,ts,tsx}",
@@ -34,4 +32,4 @@ module.exports = withGluestackUI({
         },
     },
     plugins: [],
-});
+};
