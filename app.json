@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/skillswap-icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/skillswap-icon.png",
       "resizeMode": "contain",
