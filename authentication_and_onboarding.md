@@ -13,11 +13,14 @@ Based on current routing and state analysis:
     4.  `/(tabs)` (Main Home/App interface)
 
 *   **Required Fields in Profile Setup:**
-    *   **Display Name:** Strictly required to submit the form manually (`canSubmit = displayName.trim().length > 0`).
-    *   *Note on Optional Fields:* Photo (uses Native iOS full-screen crop UI), Location (via `expo-location` GPS fetch), "Skills you can teach", and "Skills you want to learn" are all optional. 
-    *   *Note on Bypassing:* There is a "Skip for now" button that forcefully sets `isProfileComplete=true` in Redux, which acts as a valid way for the user to completely bypass all fields.
+    *   **Display Name:** Mandatory. Must be non-empty.
+    *   **Profile Photo:** Mandatory. Subject to AI-powered face detection and safety checks (Google Vision API).
+    *   **Skills (Teach/Want):** Mandatory. Users must select at least one skill in each category to proceed.
+    *   **Location:** Mandatory. Fetched via GPS or manually confirmed.
+    *   **Bypassing:** All bypass mechanisms (e.g., "Skip for now") have been **removed**. Profile completion is strictly enforced and validated server-side.
 
 *   **Rules & Edge Cases:**
     *   **Safe-guard Timeouts**: A strict 3-second timeout exists in `_layout.tsx` that will forcefully release the Splash Screen if Firestore listeners hang, allowing the user into the app with a "locally stale" state to prevent infinite freezing.
     *   **Idempotent Profile Sync**: On *every* successful `onAuthStateChanged`, the app runs `upsertUserProfile`. If this is their first login (or first time after an uncompleted Firebase setup), it creates their Firestore user document and bootstraps default state (e.g., giving the user `10` starting credits and `0` swaps).
-    *   **Missing Features**: Currently, there are no active implementations of email verification checks (`firebaseUser.emailVerified`), Phone/OTP login, or dedicated "Banned/Blocked User" routing (a user doc field `isBanned` does not exist in the immediate auth resolution cycle).
+    *   **Backend Integrity**: `isProfileComplete` is only set to `true` by a Cloud Function (`validateUserProfile`) after successful AI processing of the profile photo. Client-side updates to this field are blocked by Firestore Security Rules.
+    *   **Pending State**: Users with an uploaded photo enter a `pending` state while AI validation runs. Discovery feeds are filtered to hide users until `isProfileComplete` is confirmed.

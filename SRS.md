@@ -20,6 +20,7 @@ SkillSwap is a React Native mobile application that lets users discover people n
 - ♻️ OTA updates via Expo EAS (no app store needed)
 - 🎫 In-app support ticket system
 - 📊 Profile Strength tracker with animated progress
+- 🛡️ AI-powered profile photo validation (Google Vision API)
 
 ---
 
@@ -219,7 +220,8 @@ credits: number,           // in-app balance (Cloud Function only writes)
 rating: number,            // 0–5 star average
 reviewCount: number,
 completedSwaps: number,
-isProfileComplete: boolean,
+isProfileComplete: boolean,    // Server-managed (true only if AI validation passes)
+profileStatus: string,         // 'pending' | 'complete' | 'rejected'
 hasPhoto: boolean,
 hasSeenPaywall: boolean,
 isOnline: boolean,
@@ -404,6 +406,22 @@ Automated on `git push`:
 
 ---
 
+## 11. Maintenance & Data Quality
+
+### Sanitization Scripts
+Located in `src/scripts/`:
+- `sanitizeUsers.ts`: Scans Firestore for incomplete profiles and flags/hides them.
+- `activateUsers.ts`: Hardened to prevent accidental activation of low-quality test accounts.
+- `checkFirestoreUsers.ts`: Diagnostic tool for user counts and completion status.
+
+### AI Validation Profile Flow
+1. User uploads photo → Cloud Function `validateUserProfile` triggered.
+2. Vision API checks for: `faceAnnotations`, `safeSearch`, and `labelAnnotations`.
+3. If valid → `isProfileComplete` set to `true`.
+4. If invalid → `profileStatus` set to `rejected`, user must re-upload.
+
+---
+
 ## 11. Build Commands Reference
 
 ```powershell
@@ -438,7 +456,8 @@ firebase deploy --only firestore:rules
 
 | Collection | Read | Write | Notes |
 |---|---|---|---|
-| `users/{uid}` | Any signed-in user | Owner only | Credits/payment fields blocked client-side |
+| `users/{uid}` | Any signed-in user | Owner only | `credits`/`isProfileComplete` blocked client-side |
+| `discovery` | Any signed-in user | `false` | Strictly filters `isProfileComplete == true` |
 | `swapRequests/{id}` | Participants only | Creator (fromUid) | Status update limited to participants |
 | `matches/{id}` | Participants only | Participants | lastMessage updatable by participants |
 | `matches/{id}/messages` | Match users | Match users | Via `get()` check on parent |
@@ -457,8 +476,8 @@ firebase deploy --only firestore:rules
 > **All Firestore writes go through `firestoreService.ts`.**
 > No direct `setDoc/updateDoc/getDoc` in components.
 
-> **Credits are Cloud Function-only writes.**
-> Firestore rules block client writes to `credits`, `creditsSpent`, `lastPaymentId`, `isPremium`.
+> **Credits and Profile Completion are Server-only.**
+> Firestore rules block client writes to `credits`, `isProfileComplete`, and `profileStatus`. Completion is triggered by the `validateUserProfile` Cloud Function.
 
 > **`metro.config.js` — use plain `path.join()` for NativeWind input.**
 > `pathToFileURL()` sends a `file://C:/` URL that breaks EAS Linux build servers permanently.
