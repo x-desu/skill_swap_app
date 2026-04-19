@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 16.6.2",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EAS_BUILD_DISABLE_NPM_CACHE": "1"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "production"
+    },
+    "production": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "production"
+    }
+  }
+}

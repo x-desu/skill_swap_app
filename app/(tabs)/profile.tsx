@@ -1,8 +1,8 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Animated } from 'react-native';
 import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, Settings, Edit2, Plus, Crown, CreditCard, ChevronRight } from 'lucide-react-native';
+import { MapPin, Settings, Edit2, Plus, Crown, CreditCard, ChevronRight, CheckCircle, Circle } from 'lucide-react-native';
 import { router } from 'expo-router';
 import type { RootState } from '../../src/store';
 import UserAvatar from '../../src/components/UserAvatar';
@@ -20,7 +20,101 @@ const COLORS = {
   statBg: 'rgba(255, 26, 92, 0.05)',
 };
 
+// ── Profile Strength Ring ─────────────────────────────────────────────────────
+function ProfileStrengthCard({ profile }: { profile: any }) {
+  const checks = [
+    { label: 'Profile photo',        done: !!profile.photoURL },
+    { label: 'Bio written',          done: (profile.bio?.trim()?.length ?? 0) > 10 },
+    { label: 'Skills to teach',      done: (profile.teachSkills?.length ?? 0) > 0 },
+    { label: 'Skills to learn',      done: (profile.wantSkills?.length ?? 0) > 0 },
+    { label: 'Location set',         done: !!profile.location?.city },
+  ];
 
+  const completed = checks.filter(c => c.done).length;
+  const total = checks.length;
+  const pct = Math.round((completed / total) * 100);
+
+  // Animated fill bar
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: pct / 100, duration: 900, useNativeDriver: false }).start();
+  }, [pct]);
+
+  const barColor = pct === 100 ? '#34d399' : pct >= 60 ? '#fbbf24' : COLORS.rosePrimary;
+  const label    = pct === 100 ? '🎉 Profile complete!' : pct >= 60 ? 'Almost there!' : 'Complete your profile';
+
+  return (
+    <View style={[strStyles.card, pct === 100 && strStyles.cardComplete]}>
+      {/* Title row */}
+      <View style={strStyles.titleRow}>
+        <View>
+          <Text style={strStyles.title}>Profile Strength</Text>
+          <Text style={[strStyles.subtitle, { color: barColor }]}>{label}</Text>
+        </View>
+        <View style={[strStyles.pctBadge, { backgroundColor: barColor + '22', borderColor: barColor + '44' }]}>
+          <Text style={[strStyles.pctText, { color: barColor }]}>{pct}%</Text>
+        </View>
+      </View>
+
+      {/* Progress bar */}
+      <View style={strStyles.barTrack}>
+        <Animated.View style={[strStyles.barFill, {
+          backgroundColor: barColor,
+          width: anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+        }]} />
+      </View>
+
+      {/* Checklist */}
+      <View style={strStyles.checklist}>
+        {checks.map((c) => (
+          <View key={c.label} style={strStyles.checkRow}>
+            {c.done
+              ? <CheckCircle color="#34d399" size={16} />
+              : <Circle color={COLORS.textMuted} size={16} />
+            }
+            <Text style={[strStyles.checkLabel, c.done && strStyles.checkLabelDone]}>
+              {c.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {pct < 100 && (
+        <TouchableOpacity style={strStyles.cta} onPress={() => router.push('/edit-profile')}>
+          <Text style={strStyles.ctaText}>Complete Profile →</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const strStyles = StyleSheet.create({
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 20, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    padding: 18, marginBottom: 30,
+  },
+  cardComplete: {
+    borderColor: 'rgba(52,211,153,0.3)',
+    backgroundColor: 'rgba(52,211,153,0.05)',
+  },
+  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  title: { fontSize: 17, fontWeight: '800', color: '#fff' },
+  subtitle: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  pctBadge: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 5 },
+  pctText: { fontSize: 16, fontWeight: '900' },
+  barTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden', marginBottom: 16 },
+  barFill: { height: '100%', borderRadius: 3 },
+  checklist: { gap: 10 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  checkLabel: { fontSize: 13, color: 'rgba(255,255,255,0.4)', fontWeight: '500' },
+  checkLabelDone: { color: 'rgba(255,255,255,0.85)', textDecorationLine: 'line-through' },
+  cta: { marginTop: 16, backgroundColor: '#ff1a5c', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  ctaText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+});
+
+// ── Main Screen ───────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
     const currentUser = useSelector((state: RootState) => state.profile.profile);
@@ -99,6 +193,9 @@ export default function ProfileScreen() {
                     </View>
                 </View>
 
+                {/* ── Profile Strength ── */}
+                <ProfileStrengthCard profile={currentUser} />
+
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Subscription</Text>
                     <TouchableOpacity style={styles.subscriptionCard} onPress={() => router.push('/paywall')}>
@@ -170,282 +267,92 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: COLORS.bgBase 
-    },
+    container: { flex: 1, backgroundColor: COLORS.bgBase },
     header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingTop: 10,
-        paddingBottom: 15,
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingHorizontal: 24, paddingTop: 10, paddingBottom: 15,
     },
-    headerTitle: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: COLORS.textPrimary,
-        letterSpacing: 0.5,
-    },
+    headerTitle: { fontSize: 28, fontWeight: '800', color: COLORS.textPrimary, letterSpacing: 0.5 },
     iconButton: {
-        padding: 8,
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
+        padding: 8, backgroundColor: COLORS.cardBg,
+        borderRadius: 20, borderWidth: 1, borderColor: COLORS.borderLight,
     },
-    content: { 
-        paddingBottom: 120, 
-        paddingHorizontal: 20,
-        paddingTop: 10,
-    },
-    profileHeader: {
-        alignItems: 'center',
-        marginBottom: 35,
-    },
-    name: {
-        fontSize: 26,
-        fontWeight: '800',
-        color: COLORS.textPrimary,
-        marginTop: 15,
-        marginBottom: 4,
-    },
+    content: { paddingBottom: 120, paddingHorizontal: 20, paddingTop: 10 },
+    profileHeader: { alignItems: 'center', marginBottom: 35 },
+    name: { fontSize: 26, fontWeight: '800', color: COLORS.textPrimary, marginTop: 15, marginBottom: 4 },
     locationContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 15,
-        backgroundColor: COLORS.cardBg,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
+        flexDirection: 'row', alignItems: 'center', marginBottom: 15,
+        backgroundColor: COLORS.cardBg, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
     },
-    location: {
-        color: COLORS.textSecondary,
-        marginLeft: 6,
-        fontSize: 14,
-        fontWeight: '500',
-    },
+    location: { color: COLORS.textSecondary, marginLeft: 6, fontSize: 14, fontWeight: '500' },
     editButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 18,
-        paddingVertical: 10,
-        borderRadius: 20,
-        backgroundColor: COLORS.rosePrimary,
-        marginBottom: 25,
-        shadowColor: COLORS.rosePrimary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 10,
+        borderRadius: 20, backgroundColor: COLORS.rosePrimary, marginBottom: 25,
+        shadowColor: COLORS.rosePrimary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
     },
-    editButtonText: {
-        marginLeft: 8,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        fontSize: 14,
-    },
+    editButtonText: { marginLeft: 8, fontWeight: '700', color: COLORS.textPrimary, fontSize: 14 },
     statsRow: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        width: '100%',
-        backgroundColor: COLORS.cardBg,
-        paddingVertical: 18,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-        marginBottom: 15,
+        flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%',
+        backgroundColor: COLORS.cardBg, paddingVertical: 18, borderRadius: 20,
+        borderWidth: 1, borderColor: COLORS.borderLight, marginBottom: 15,
     },
-    statItem: {
-        alignItems: 'center',
-        flex: 1,
-    },
-    statDivider: {
-        width: 1,
-        height: 30,
-        backgroundColor: COLORS.borderLight,
-    },
-    statNumber: {
-        fontSize: 22,
-        fontWeight: '800',
-        color: COLORS.textPrimary,
-        marginBottom: 4,
-    },
-    statLabel: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
-        fontWeight: '500',
-    },
+    statItem: { alignItems: 'center', flex: 1 },
+    statDivider: { width: 1, height: 30, backgroundColor: COLORS.borderLight },
+    statNumber: { fontSize: 22, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 4 },
+    statLabel: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '500' },
     statsRowSecondary: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        width: '100%',
-        paddingHorizontal: 10,
+        flexDirection: 'row', justifyContent: 'space-between', width: '100%', paddingHorizontal: 10,
     },
     statItemSecondary: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: COLORS.cardBg,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-        marginHorizontal: 5,
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: COLORS.cardBg, paddingHorizontal: 16, paddingVertical: 12,
+        borderRadius: 16, borderWidth: 1, borderColor: COLORS.borderLight, marginHorizontal: 5,
     },
-    statSecondaryLabel: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-        fontWeight: '500',
-    },
-    statSecondaryValue: {
-        fontSize: 16,
-        fontWeight: '800',
-        color: COLORS.rosePrimary,
-    },
-    section: {
-        marginBottom: 30,
-    },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: '800',
-        color: COLORS.textPrimary,
-        marginBottom: 15,
-        letterSpacing: 0.5,
-    },
-    bioCard: {
-        backgroundColor: COLORS.cardBg,
-        padding: 16,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-    },
+    statSecondaryLabel: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '500' },
+    statSecondaryValue: { fontSize: 16, fontWeight: '800', color: COLORS.rosePrimary },
+    section: { marginBottom: 30 },
+    sectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 15, letterSpacing: 0.5 },
+    bioCard: { backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.borderLight },
+    bio: { fontSize: 15, color: COLORS.textSecondary, lineHeight: 22 },
     subscriptionCard: {
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-        flexDirection: 'row',
-        alignItems: 'center',
+        backgroundColor: COLORS.cardBg, borderRadius: 16, padding: 16,
+        borderWidth: 1, borderColor: COLORS.borderLight, flexDirection: 'row', alignItems: 'center',
     },
     subscriptionActionCard: {
-        marginTop: 12,
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 16,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        marginTop: 12, backgroundColor: COLORS.cardBg, borderRadius: 16,
+        paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1, borderColor: COLORS.borderLight,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     },
     subscriptionIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(255, 26, 92, 0.14)',
-        marginRight: 14,
+        width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(255, 26, 92, 0.14)', marginRight: 14,
     },
-    subscriptionCopy: {
-        flex: 1,
-    },
-    subscriptionActionLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        marginRight: 12,
-    },
+    subscriptionCopy: { flex: 1 },
+    subscriptionActionLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
     subscriptionActionIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-        marginRight: 12,
+        width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)', marginRight: 12,
     },
-    subscriptionActionCopy: {
-        flex: 1,
-    },
-    subscriptionTitle: {
-        color: COLORS.textPrimary,
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    subscriptionSubtitle: {
-        color: COLORS.textSecondary,
-        fontSize: 13,
-        marginTop: 6,
-    },
-    subscriptionActionTitle: {
-        color: COLORS.textPrimary,
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    subscriptionActionSubtitle: {
-        color: COLORS.textSecondary,
-        fontSize: 13,
-        marginTop: 4,
-        lineHeight: 18,
-    },
-    bio: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        lineHeight: 22,
-    },
-    skillsContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 10,
-    },
+    subscriptionActionCopy: { flex: 1 },
+    subscriptionTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '700' },
+    subscriptionSubtitle: { color: COLORS.textSecondary, fontSize: 13, marginTop: 6 },
+    subscriptionActionTitle: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '700' },
+    subscriptionActionSubtitle: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4, lineHeight: 18 },
+    skillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     skillChipPrimary: {
-        backgroundColor: 'rgba(255, 26, 92, 0.15)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 26, 92, 0.4)',
+        backgroundColor: 'rgba(255, 26, 92, 0.15)', paddingHorizontal: 16, paddingVertical: 8,
+        borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255, 26, 92, 0.4)',
     },
-    skillTextPrimary: {
-        color: COLORS.rosePrimary,
-        fontWeight: '700',
-        fontSize: 14,
-    },
+    skillTextPrimary: { color: COLORS.rosePrimary, fontWeight: '700', fontSize: 14 },
     skillChipSecondary: {
-        backgroundColor: COLORS.cardBg,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: COLORS.borderLight,
+        backgroundColor: COLORS.cardBg, paddingHorizontal: 16, paddingVertical: 8,
+        borderRadius: 20, borderWidth: 1, borderColor: COLORS.borderLight,
     },
-    skillTextSecondary: {
-        color: COLORS.textPrimary,
-        fontWeight: '600',
-        fontSize: 14,
-    },
+    skillTextSecondary: { color: COLORS.textPrimary, fontWeight: '600', fontSize: 14 },
     addSkillChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: COLORS.textSecondary,
-        borderStyle: 'dashed',
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+        borderWidth: 1, borderColor: COLORS.textSecondary, borderStyle: 'dashed',
     },
-    addSkillText: {
-        fontWeight: '600',
-        color: COLORS.textSecondary,
-        fontSize: 14,
-        marginLeft: 4,
-    }
+    addSkillText: { fontWeight: '600', color: COLORS.textSecondary, fontSize: 14, marginLeft: 4 },
 });

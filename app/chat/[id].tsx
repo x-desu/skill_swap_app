@@ -40,7 +40,7 @@ import { createVideoCallInvite } from '../../src/services/videoCallService';
 import { uploadChatImage } from '../../src/services/storageService';
 import { DAILY_FREE_LIMITS, ACTION_CREDIT_COSTS } from '../../src/constants/ActionLimits';
 import { spendCreditsOnServer } from '../../src/services/creditsService';
-import { checkAndResetDailyLimits, incrementDailyLimit } from '../../src/services/firestoreService';
+import { checkAndResetDailyLimits, incrementDailyLimit, getUserProfile } from '../../src/services/firestoreService';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -151,6 +151,20 @@ export default function ChatRoomScreen() {
     (params.targetPhotoURL as string) ||
     (params.senderPhotoURL as string) ||
     '';
+
+  const [fetchedTargetPhoto, setFetchedTargetPhoto] = useState<string>('');
+
+  useEffect(() => {
+    if (!targetPhoto && targetUid) {
+      getUserProfile(targetUid)
+        .then((doc) => {
+          if (doc?.photoURL) setFetchedTargetPhoto(doc.photoURL);
+        })
+        .catch(console.error);
+    }
+  }, [targetUid, targetPhoto]);
+
+  const activeTargetPhoto = targetPhoto || fetchedTargetPhoto;
 
   // Stable selector reference – no new [] created on every render
   const roomSelector = useMemo(() => selectRoomMessages(matchId), [matchId]);
@@ -545,7 +559,7 @@ export default function ChatRoomScreen() {
           <UserAvatar
             uid={targetUid}
             displayName={targetName}
-            photoURL={targetPhoto}
+            photoURL={activeTargetPhoto}
             size={38}
           />
           {isOnline && <View style={styles.onlineDot} />}

@@ -388,7 +388,6 @@ export default function MatchesScreen() {
                       id: item.matchId,
                       targetUid: item.targetUid,
                       name: item.title,
-                      photoURL: item.photoURL || '',
                     },
                   })
                 }

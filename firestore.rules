@@ -97,6 +97,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ─── supportTickets/{id} ─────────────────────────────────────────────────
+    // Users can create, read, and delete their own tickets.
+    // Update is intentionally restricted so only the backend can change status.
+    match /supportTickets/{id} {
+      allow read:   if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid
+                     && resource.data.status == 'open';
+      allow update: if false; // Status changes done server-side only
+    }
+
     // ─── Deny all other paths ─────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

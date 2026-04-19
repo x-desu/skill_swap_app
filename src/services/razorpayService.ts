@@ -5,16 +5,18 @@ import Constants from 'expo-constants';
 
 const FUNCTIONS_REGION = 'asia-south1';
 
-/**
- * Get the Razorpay Key ID from app.json extra config.
- * Throws if not configured — never silently falls back to a test key.
- */
+// In production/release APKs, Constants.expoConfig is null.
+// We hardcode the live key as the fallback so the paywall always works.
+const RAZORPAY_KEY_ID = 'rzp_live_SX039qZ9OOIngV';
+
 function getRazorpayKeyId(): string {
-  const key = ((Constants.expoConfig?.extra ?? {}) as Record<string, unknown>)?.razorpayKeyId?.toString();
+  const key =
+    ((Constants.expoConfig?.extra ?? {}) as Record<string, unknown>)?.razorpayKeyId?.toString()
+    ?? RAZORPAY_KEY_ID;
   if (!key) {
     throw new Error(
-      '[Razorpay] razorpayKeyId is not configured in app.json extra. ' +
-      'Add it under expo.extra.razorpayKeyId.'
+      '[Razorpay] razorpayKeyId is not configured. ' +
+      'Add it under expo.extra.razorpayKeyId in app.json.'
     );
   }
   return key;
@@ -94,22 +96,34 @@ export async function startRazorpayPayment(
   } catch (error: any) {
     // Razorpay SDK errors have: { code, description, details }
     const rzpCode = error?.code;
-    const rzpDescription = error?.description || error?.message || '';
+    let rzpDescription = error?.description || error?.message || '';
     const rzpDetails = error?.details || {};
+
+    // The description is sometimes a JSON string — parse it to get source/reason
+    let parsedDesc: any = {};
+    try {
+      parsedDesc = typeof rzpDescription === 'string' ? JSON.parse(rzpDescription) : rzpDescription;
+    } catch { /* not JSON, use as-is */ }
+
+    const errorSource = parsedDesc?.error?.source || '';
+    const errorReason = parsedDesc?.error?.reason || '';
 
     console.error('[Razorpay Service] Payment Error:', {
       code: rzpCode,
       description: rzpDescription,
       details: JSON.stringify(rzpDetails),
+      source: errorSource,
+      reason: errorReason,
     });
 
-    // Code 2 = user cancelled
-    if (rzpCode === 2) {
+    // Customer-initiated cancellation — silent, no alert
+    // Covers: code=2 (explicit cancel) AND code=0 with source=customer (back button/dismiss)
+    if (rzpCode === 2 || errorSource === 'customer') {
       console.log('[Razorpay Service] User cancelled payment');
       return false;
     }
 
-    // Code 0 = network error
+    // Code 0 with no customer source = real network error
     if (rzpCode === 0) {
       Alert.alert('Network Error', 'Please check your internet connection and try again.');
       return false;

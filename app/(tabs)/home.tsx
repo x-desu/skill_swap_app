@@ -13,7 +13,7 @@ import {
   Gift, ArrowLeftRight, Star, Users, Sparkles, Globe
 } from 'lucide-react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { useRouter } from 'expo-router';
+import { useRouter, router } from 'expo-router';
 import type { RootState } from '../../src/store';
 import { useDiscoveryFeed } from '../../src/hooks/useDiscoveryFeed';
 import { useNotifications } from '../../src/hooks/useNotifications';
@@ -95,7 +95,7 @@ function AnimatedCard({
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.cardImageContainer}
-          onPress={() => router.push({ pathname: '/user/[id]', params: { id: person.uid } })}
+          onPress={() => router.push(`/user/${person.uid}`)}
         >
           <UserAvatar
             photoURL={person.photoURL}
@@ -241,7 +241,7 @@ export default function HomeScreen() {
       if (match) {
         router.push({
           pathname: '/match-celebration',
-          params: { matchId: match.id, targetUid: toUser.uid, targetName: toUser.displayName, targetPhoto: toUser.photoURL || '' },
+          params: { matchId: match.id, targetUid: toUser.uid, targetName: toUser.displayName },
         });
       } else {
         Alert.alert('Swap Proposed!', `Your request was sent to ${toUser.displayName}.`);

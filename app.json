@@ -4,6 +4,16 @@
     "slug": "skill_swap_app",
     "scheme": "skillswap",
     "version": "1.0.0",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/6842636a-67df-4aed-8533-8e686f247a15",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
+    },
     "orientation": "portrait",
     "icon": "./assets/skillswap-icon.png",
     "userInterfaceStyle": "dark",
@@ -25,6 +35,11 @@
     "android": {
       "package": "com.skillswap.app",
       "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBmMEOetSC22WfPBQ9x2If-zES1_ZDpe7o"
+        }
+      },
       "adaptiveIcon": {
         "foregroundImage": "./assets/skillswap-icon.png",
         "backgroundColor": "#000000"

@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { LogBox, View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Stack } from 'expo-router';
 import { Provider, useDispatch } from 'react-redux';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -20,6 +20,7 @@ import {
 import DataProvider from '../src/components/DataProvider';
 import IncomingCallBanner from '../src/components/IncomingCallBanner';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import * as Updates from 'expo-updates';
 import '../global.css';
 
 
@@ -28,9 +29,6 @@ LogBox.ignoreLogs([
   'Sending `onAnimatedValueUpdate` with no listeners registered.',
 ]);
 
-LogBox.ignoreLogs([
-  'Sending `onAnimatedValueUpdate` with no listeners registered.',
-]);
 
 GoogleSignin.configure({
   webClientId:
@@ -164,10 +162,10 @@ function AppNavigator() {
       <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
       <Stack.Screen
         name="match-celebration"
-        options={{ presentation: 'modal', headerShown: false }}
+        options={{ headerShown: false, presentation: 'transparentModal', animation: 'slide_from_bottom' }}
       />
       <Stack.Screen
-        name="chat/[id]"
+        name="chat"
         options={{ headerShown: false, title: 'Chat', animation: 'slide_from_right' }}
       />
       <Stack.Screen
@@ -181,13 +179,102 @@ function AppNavigator() {
       />
       <Stack.Screen
         name="settings"
-        options={{ headerShown: false, presentation: 'modal' }}
+        options={{ headerShown: false, presentation: 'transparentModal', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
+        name="user/[id]"
+        options={{ headerShown: false, animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="edit-profile"
+        options={{ headerShown: false, presentation: 'transparentModal', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
+        name="notifications"
+        options={{ headerShown: false, presentation: 'transparentModal', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
+        name="paywall"
+        options={{ headerShown: false, presentation: 'transparentModal', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
+        name="customer-center"
+        options={{ headerShown: false, animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="skills-directory"
+        options={{ headerShown: false, animation: 'slide_from_bottom' }}
       />
     </Stack>
   );
 }
 
-import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+
+// ── OTA Update Banner ─────────────────────────────────────────────────────────
+function UpdateBanner() {
+  const [status, setStatus] = useState<'idle' | 'downloading' | 'ready'>('idle');
+  const slideAnim = useRef(new Animated.Value(-80)).current;
+
+  const show = () => {
+    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
+  };
+  const hide = () => {
+    Animated.timing(slideAnim, { toValue: -80, duration: 300, useNativeDriver: true }).start();
+  };
+
+  useEffect(() => {
+    if (Updates.isEmbeddedLaunch) return; // skip in dev/Expo Go
+    (async () => {
+      try {
+        const check = await Updates.checkForUpdateAsync();
+        if (!check.isAvailable) return;
+        setStatus('downloading');
+        show();
+        await Updates.fetchUpdateAsync();
+        setStatus('ready');
+      } catch {
+        hide();
+      }
+    })();
+  }, []);
+
+  if (status === 'idle') return null;
+
+  return (
+    <Animated.View style={[bannerStyles.wrap, { transform: [{ translateY: slideAnim }] }]}>
+      {status === 'downloading' ? (
+        <View style={bannerStyles.row}>
+          <View style={bannerStyles.dot} />
+          <Text style={bannerStyles.text}>Downloading update…</Text>
+        </View>
+      ) : (
+        <TouchableOpacity style={bannerStyles.row} onPress={() => Updates.reloadAsync()}>
+          <Text style={bannerStyles.emoji}>✦</Text>
+          <Text style={bannerStyles.text}>Update ready — </Text>
+          <Text style={bannerStyles.action}>Tap to restart</Text>
+        </TouchableOpacity>
+      )}
+    </Animated.View>
+  );
+}
+
+const bannerStyles = StyleSheet.create({
+  wrap: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9999,
+    backgroundColor: '#ff1a5c',
+    paddingTop: 48, paddingBottom: 12, paddingHorizontal: 20,
+    shadowColor: '#ff1a5c', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5, shadowRadius: 12, elevation: 20,
+  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dot: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#fff', opacity: 0.9,
+  },
+  emoji: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  text: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  action: { color: '#fff', fontSize: 14, fontWeight: '900', textDecorationLine: 'underline' },
+});
 
 export default function RootLayout() {
   return (
@@ -199,6 +286,7 @@ export default function RootLayout() {
               <DataProvider>
                 <AppNavigator />
                 <IncomingCallBanner />
+                <UpdateBanner />
               </DataProvider>
             </BottomSheetModalProvider>
           </ThemeProvider>

@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../src/store';
 import UserAvatar from '../src/components/UserAvatar';
+import { getUserProfile } from '../src/services/firestoreService';
 
 const COLORS = {
   rosePrimary: '#ff1a5c',
@@ -21,11 +22,25 @@ export default function MatchCelebrationScreen() {
   const targetName = params.targetName as string;
   const targetPhoto = params.targetPhoto as string;
 
+  const [fetchedPhoto, setFetchedPhoto] = useState<string>('');
+
+  useEffect(() => {
+    if (!targetPhoto && targetUid) {
+      getUserProfile(targetUid)
+        .then((doc) => {
+          if (doc?.photoURL) setFetchedPhoto(doc.photoURL);
+        })
+        .catch(console.error);
+    }
+  }, [targetUid, targetPhoto]);
+
+  const activeTargetPhoto = targetPhoto || fetchedPhoto;
+
   const handleSayHello = () => {
     // Dismiss modal and navigate to chat room
     router.replace({
       pathname: '/chat/[id]',
-      params: { id: matchId, name: targetName, photoURL: targetPhoto },
+      params: { id: matchId, name: targetName },
     });
   };
 
@@ -52,7 +67,7 @@ export default function MatchCelebrationScreen() {
           <UserAvatar
             uid={targetUid}
             displayName={targetName}
-            photoURL={targetPhoto}
+            photoURL={activeTargetPhoto}
             size={100}
             style={styles.avatar}
           />

@@ -12,7 +12,7 @@ import {
 import MapView, { Circle, Marker, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { X, Infinity, Zap, Star, ShieldCheck } from 'lucide-react-native';
+import { X, Infinity, Zap, Star, ShieldCheck, MapPin } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -23,12 +23,13 @@ import { useAuth } from '../src/hooks/useAuth';
 import { startRazorpayPayment } from '../src/services/razorpayService';
 
 const PRIMARY = '#ff1a5c';
-const DARK_BG = '#000000';
-const DARK_SURFACE = '#0d0202';
-const DARK_CARD = '#1a0505';
+const PRIMARY_GLOW = 'rgba(255,26,92,0.25)';
+const DARK_BG = '#0a0010';
+const DARK_SURFACE = '#110018';
+const DARK_CARD = '#1a0025';
 const DARK_TEXT = '#FFFFFF';
-const DARK_TEXT_MUTED = '#888888';
-const MAP_CIRCLE = 'rgba(255, 26, 92, 0.25)';
+const DARK_TEXT_MUTED = 'rgba(255,255,255,0.5)';
+const MAP_CIRCLE = 'rgba(255, 26, 92, 0.18)';
 
 const FALLBACK: Region = {
   latitude: 28.6139,
@@ -37,24 +38,19 @@ const FALLBACK: Region = {
   longitudeDelta: 0.09,
 };
 
-type ResolvedLocation = {
-  city: string;
-  country: string;
-};
+type ResolvedLocation = { city: string; country: string };
 
 const CREDIT_PACKS = [
-  { id: 'starter', credits: 10, inr: 99,  label: 'Starter Pack', badge: '10' },
-  { id: 'value',   credits: 25, inr: 250, label: 'Value Pack',   badge: '25' },
-  { id: 'pro',     credits: 75, inr: 499, label: 'Pro Pack',     badge: '75' },
+  { id: 'starter', credits: 10, inr: 99,  label: 'Starter', badge: '10', popular: false },
+  { id: 'value',   credits: 25, inr: 250, label: 'Value',   badge: '25', popular: true  },
+  { id: 'pro',     credits: 75, inr: 499, label: 'Pro',     badge: '75', popular: false },
 ];
 
-function formatLocationLabel(location: Partial<ResolvedLocation> | null | undefined): string {
-  const city = location?.city?.trim();
-  const country = location?.country?.trim();
+function formatLocationLabel(loc: Partial<ResolvedLocation> | null | undefined): string {
+  const city = loc?.city?.trim();
+  const country = loc?.country?.trim();
   if (city && country) return `${city}, ${country}`;
-  if (city) return city;
-  if (country) return country;
-  return 'Location unavailable';
+  return city || country || 'Detecting location…';
 }
 
 export default function PaywallScreen() {
@@ -65,7 +61,7 @@ export default function PaywallScreen() {
   const mapRef = useRef<MapView | null>(null);
 
   const [region, setRegion] = useState(FALLBACK);
-  const [locationLabel, setLocationLabel] = useState('Location unavailable');
+  const [locationLabel, setLocationLabel] = useState('Detecting location…');
   const [showUserLocation, setShowUserLocation] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(1);
   const [purchasing, setPurchasing] = useState(false);
@@ -73,85 +69,33 @@ export default function PaywallScreen() {
   useEffect(() => {
     let cancelled = false;
     let subscription: Location.LocationSubscription | null = null;
-
-    const applyRegion = (nextRegion: Region, shouldShowRealUserLocation: boolean) => {
-      if (cancelled) return;
-      setRegion(nextRegion);
-      setShowUserLocation(shouldShowRealUserLocation);
-    };
-
-    const applyLocationLabel = (location: Partial<ResolvedLocation> | null | undefined) => {
-      if (cancelled) return;
-      setLocationLabel(formatLocationLabel(location));
-    };
-
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled || status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         if (cancelled) return;
-        if (status !== 'granted') return;
-
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-        if (cancelled) return;
-
-        const initialRegion = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          latitudeDelta: 0.06,
-          longitudeDelta: 0.06,
-        };
-        applyRegion(initialRegion, true);
-        mapRef.current?.animateToRegion(initialRegion, 1000);
-
+        const nr = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 };
+        setRegion(nr);
+        setShowUserLocation(true);
+        mapRef.current?.animateToRegion(nr, 1000);
+        try {
+          const geo = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+          if (geo.length > 0 && !cancelled) {
+            const p = geo[0];
+            setLocationLabel(formatLocationLabel({ city: p.city || p.subregion || p.region || '', country: p.country || '' }));
+          }
+        } catch {}
         subscription = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
-          async (location) => {
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 30 },
+          (loc) => {
             if (cancelled) return;
-            const nextRegion = {
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-              latitudeDelta: 0.06,
-              longitudeDelta: 0.06,
-            };
-            applyRegion(nextRegion, true);
-            try {
-              const geocode = await Location.reverseGeocodeAsync({
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              });
-              if (geocode.length > 0) {
-                const place = geocode[0];
-                applyLocationLabel({
-                  city: place.city || place.subregion || place.region || '',
-                  country: place.country || '',
-                });
-              }
-            } catch {}
+            setRegion({ latitude: loc.coords.latitude, longitude: loc.coords.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 });
           }
         );
-
-        const geocode = await Location.reverseGeocodeAsync({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-        if (geocode.length > 0) {
-          const place = geocode[0];
-          applyLocationLabel({
-            city: place.city || place.subregion || place.region || '',
-            country: place.country || '',
-          });
-        }
-      } catch (e) {
-        console.log('[Paywall] Location error', e);
-      }
+      } catch (e) { console.log('[Paywall] Location error', e); }
     })();
-
-    return () => {
-      cancelled = true;
-      if (subscription) subscription.remove();
-    };
+    return () => { cancelled = true; subscription?.remove(); };
   }, []);
 
   const onPurchase = async () => {
@@ -159,14 +103,10 @@ export default function PaywallScreen() {
     if (!pack) return;
     setPurchasing(true);
     try {
-      const success = await startRazorpayPayment(
-        pack.inr,
-        pack.credits,
-        user?.email || undefined
-      );
+      const success = await startRazorpayPayment(pack.inr, pack.credits, user?.email || undefined);
       if (success) {
         if (user?.uid) await upsertUserProfile(user.uid, { hasSeenPaywall: true });
-        Alert.alert('', t.purchaseThanks, [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]);
+        Alert.alert('🎉 Credits Added!', t.purchaseThanks, [{ text: 'Continue', onPress: () => router.replace('/(tabs)') }]);
       }
     } catch (e) {
       console.error('[Paywall] Purchase error', e);
@@ -182,71 +122,87 @@ export default function PaywallScreen() {
   };
 
   const onRestore = () =>
-    Alert.alert('Restore', 'Credits are non-restorable consumables. Check your transaction history in Settings.');
+    Alert.alert('Restore Purchases', 'Credits are consumable. Check your transaction history in Settings for details.');
 
   const openUrl = (url?: string) => { if (url) Linking.openURL(url); };
-
   const center = { latitude: region.latitude, longitude: region.longitude };
 
   const features = [
-    { label: t.chip1,             icon: <Infinity     color={PRIMARY} size={24} /> },
-    { label: t.chip2,             icon: <Zap          color={PRIMARY} size={24} /> },
-    { label: t.chip3,             icon: <Star         color={PRIMARY} size={24} /> },
-    { label: 'Verified profiles', icon: <ShieldCheck  color={PRIMARY} size={24} /> },
+    { label: 'Unlimited\nSwipes',  icon: <Infinity    color={PRIMARY} size={22} /> },
+    { label: 'Priority\nMatching', icon: <Zap         color={PRIMARY} size={22} /> },
+    { label: 'Instant\nMatches',   icon: <Star        color={PRIMARY} size={22} /> },
+    { label: 'Verified\nProfiles', icon: <ShieldCheck color={PRIMARY} size={22} /> },
   ];
 
   return (
     <View style={styles.root}>
-      {/* ── Map hero ── */}
+      {/* ── Map Hero ── */}
       <View style={styles.mapWrap}>
         <MapView
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           initialRegion={region}
-          region={region}
           showsUserLocation={showUserLocation}
           userInterfaceStyle="dark"
-          scrollEnabled={true}
-          zoomEnabled={true}
+          scrollEnabled={false}
+          zoomEnabled={false}
+          pitchEnabled={false}
+          rotateEnabled={false}
         >
-          <Circle center={center} radius={4200} strokeColor={PRIMARY} fillColor={MAP_CIRCLE} />
-          <Marker coordinate={center} title={t.markerTitle} description={locationLabel} />
+          <Circle center={center} radius={4500} strokeColor={PRIMARY} strokeWidth={2} fillColor={MAP_CIRCLE} />
+          <Marker coordinate={center}>
+            <View style={styles.markerDot}>
+              <MapPin color="#fff" size={14} />
+            </View>
+          </Marker>
         </MapView>
 
+        {/* Gradient fade at bottom of map */}
+        <LinearGradient
+          colors={['transparent', 'rgba(10,0,16,0.6)', DARK_BG]}
+          style={styles.mapFade}
+          pointerEvents="none"
+        />
+
         {/* Top chrome */}
-        <View style={[styles.mapChrome, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity onPress={onSkip} style={styles.iconBtn}>
-            <X color={DARK_TEXT} size={22} />
+        <View style={[styles.mapChrome, { paddingTop: insets.top + 10 }]}>
+          <TouchableOpacity onPress={onSkip} style={styles.closeBtn}>
+            <X color={DARK_TEXT} size={18} strokeWidth={2.5} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={onRestore}>
-            <Text style={styles.restore}>{t.restore}</Text>
+          <TouchableOpacity onPress={onRestore} style={styles.restoreBtn}>
+            <Text style={styles.restoreText}>Restore</Text>
           </TouchableOpacity>
         </View>
 
         {/* Location pill */}
-        <BlurView intensity={20} style={styles.locationPill}>
-          <Text style={styles.locationEyebrow}>Your area</Text>
+        <BlurView intensity={30} tint="dark" style={styles.locationPill}>
+          <MapPin color={PRIMARY} size={12} />
           <Text style={styles.locationText} numberOfLines={1}>{locationLabel}</Text>
         </BlurView>
       </View>
 
-      {/* ── Bottom sheet ── */}
-      <LinearGradient
-        colors={[DARK_BG, DARK_SURFACE, DARK_CARD]}
-        style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}
-      >
-        <Text style={styles.title}>{t.title}</Text>
-        <Text style={styles.subtitle}>{t.subtitle}</Text>
+      {/* ── Bottom Sheet ── */}
+      <View style={styles.sheet}>
+        {/* Header */}
+        <Text style={styles.title}>Unlock SkillSwap</Text>
+        <Text style={styles.subtitle}>Connect with your city. Swap skills. Grow together.</Text>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuresRow}>
+        {/* Feature chips */}
+        <View style={styles.featuresRow}>
           {features.map((f, i) => (
             <View key={i} style={styles.featureCard}>
-              <View style={styles.featureIconContainer}>{f.icon}</View>
+              <LinearGradient
+                colors={['rgba(255,26,92,0.18)', 'rgba(255,26,92,0.06)']}
+                style={styles.featureIcon}
+              >
+                {f.icon}
+              </LinearGradient>
               <Text style={styles.featureLabel}>{f.label}</Text>
             </View>
           ))}
-        </ScrollView>
+        </View>
 
+        {/* Credit packs */}
         <View style={styles.cardsRow}>
           {CREDIT_PACKS.map((pack, i) => {
             const selected = i === selectedIdx;
@@ -255,154 +211,173 @@ export default function PaywallScreen() {
                 key={pack.id}
                 style={[styles.card, selected && styles.cardSelected]}
                 onPress={() => setSelectedIdx(i)}
-                activeOpacity={0.9}
+                activeOpacity={0.85}
               >
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{pack.badge} CREDITS</Text>
+                {pack.popular && (
+                  <View style={styles.popularBadge}>
+                    <Text style={styles.popularText}>POPULAR</Text>
+                  </View>
+                )}
+                <View style={styles.creditBadge}>
+                  <Text style={styles.creditBadgeText}>{pack.badge}</Text>
                 </View>
-                <Text style={[styles.period, selected && styles.periodSelected]}>{pack.label}</Text>
-                <Text style={[styles.price,  selected && styles.priceSelected]}>₹{pack.inr}</Text>
-                <Text style={styles.approxPrice}>{pack.credits} credits to connect</Text>
+                <Text style={[styles.packLabel, selected && styles.packLabelSelected]}>{pack.label}</Text>
+                <Text style={[styles.packPrice, selected && styles.packPriceSelected]}>₹{pack.inr}</Text>
+                <Text style={styles.packSub}>{pack.credits} credits</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <View style={styles.trustRow}>
-          <Text style={styles.trust}>{t.trust}</Text>
-        </View>
+        {/* Trust line */}
+        <Text style={styles.trust}>🔒 Secure payment · Cancel anytime</Text>
 
+        {/* CTA */}
         <TouchableOpacity
           style={[styles.cta, purchasing && styles.ctaDisabled]}
           onPress={onPurchase}
           disabled={purchasing}
+          activeOpacity={0.88}
         >
-          {purchasing
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.ctaText}>{t.continue}</Text>
-          }
+          <LinearGradient
+            colors={['#ff4d7a', PRIMARY, '#cc0044']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.ctaGradient}
+          >
+            {purchasing
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.ctaText}>Get Premium ✦</Text>
+            }
+          </LinearGradient>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={onSkip} style={styles.skipBtn}>
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}>
           <TouchableOpacity onPress={() => openUrl(extra.paywallPrivacyUrl)}>
-            <Text style={styles.link}>{t.privacy}</Text>
+            <Text style={styles.link}>Privacy</Text>
           </TouchableOpacity>
+          <Text style={styles.footerDot}>·</Text>
           <TouchableOpacity onPress={() => openUrl(extra.paywallTermsUrl)}>
-            <Text style={styles.link}>{t.terms}</Text>
+            <Text style={styles.link}>Terms</Text>
           </TouchableOpacity>
         </View>
-      </LinearGradient>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: DARK_BG },
-  mapWrap: { height: '32%', minHeight: 220 },
+
+  // Map
+  mapWrap: { height: '38%', minHeight: 240 },
+  mapFade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 80 },
   mapChrome: {
-    position: 'absolute',
-    left: 0, right: 0, top: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    zIndex: 10,
+    position: 'absolute', left: 0, right: 0, top: 0,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', paddingHorizontal: 16, zIndex: 10,
   },
+  closeBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  restoreBtn: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  restoreText: { color: DARK_TEXT, fontSize: 13, fontWeight: '600' },
   locationPill: {
-    position: 'absolute',
-    left: 16, right: 16, bottom: 14,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
+    position: 'absolute', left: 16, right: 16, bottom: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+    overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,26,92,0.3)',
   },
-  locationEyebrow: {
-    color: DARK_TEXT_MUTED,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  locationText: { color: DARK_TEXT, fontSize: 17, fontWeight: '700', marginTop: 2 },
-  iconBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+  locationText: { color: DARK_TEXT, fontSize: 13, fontWeight: '600', flex: 1 },
+  markerDot: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: 8,
   },
-  restore: { fontSize: 16, color: PRIMARY, fontWeight: '700' },
+
+  // Sheet
   sheet: {
-    flex: 1,
-    borderTopLeftRadius: 32, borderTopRightRadius: 32,
-    marginTop: -28,
-    paddingHorizontal: 20, paddingTop: 26,
-    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)',
+    flex: 1, backgroundColor: DARK_BG,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    marginTop: -28, paddingHorizontal: 20, paddingTop: 28,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,26,92,0.2)',
   },
-  title: { fontSize: 26, fontWeight: '900', textAlign: 'center', color: DARK_TEXT, letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: DARK_TEXT_MUTED, textAlign: 'center', marginTop: 8, lineHeight: 20, fontWeight: '500' },
-  featuresRow: { flexDirection: 'row', gap: 12, marginTop: 24, paddingBottom: 16, paddingHorizontal: 4 },
-  featureCard: {
-    width: 105, minHeight: 110,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 22, padding: 12,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  title: {
+    fontSize: 28, fontWeight: '900', color: DARK_TEXT,
+    textAlign: 'center', letterSpacing: -0.5,
   },
-  featureIconContainer: {
-    width: 46, height: 46, borderRadius: 23,
-    backgroundColor: 'rgba(255,26,92,0.15)',
+  subtitle: {
+    fontSize: 14, color: DARK_TEXT_MUTED, textAlign: 'center',
+    marginTop: 6, marginBottom: 20, lineHeight: 20,
+  },
+
+  // Features
+  featuresRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+  featureCard: { flex: 1, alignItems: 'center', gap: 8, marginHorizontal: 3 },
+  featureIcon: {
+    width: 52, height: 52, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 10,
     borderWidth: 1, borderColor: 'rgba(255,26,92,0.3)',
   },
-  featureLabel: { fontSize: 11, color: DARK_TEXT, fontWeight: '700', textAlign: 'center', marginTop: 2 },
-  cardsRow: { flexDirection: 'row', gap: 8, marginTop: 24, justifyContent: 'space-between' },
+  featureLabel: {
+    color: DARK_TEXT, fontSize: 10, fontWeight: '700',
+    textAlign: 'center', lineHeight: 14,
+  },
+
+  // Cards
+  cardsRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   card: {
-    flex: 1, minHeight: 155,
-    borderRadius: 20, borderWidth: 1,
+    flex: 1, borderRadius: 18, borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.1)',
-    padding: 10, paddingTop: 36,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    padding: 10, paddingTop: 22, alignItems: 'center', minHeight: 130,
   },
   cardSelected: {
     borderColor: PRIMARY,
-    backgroundColor: 'rgba(255,26,92,0.06)',
-    borderWidth: 1.5,
+    backgroundColor: 'rgba(255,26,92,0.1)',
   },
-  badge: {
-    position: 'absolute', top: -12, alignSelf: 'center',
-    backgroundColor: PRIMARY,
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 10, zIndex: 10,
-    shadowColor: PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 8,
+  popularBadge: {
+    position: 'absolute', top: -10, alignSelf: 'center',
+    backgroundColor: PRIMARY, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 8, zIndex: 5,
   },
-  badgeText: { fontSize: 9, fontWeight: '900', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 },
-  period: { fontSize: 12, color: DARK_TEXT_MUTED, fontWeight: '700', textAlign: 'center' },
-  periodSelected: { color: DARK_TEXT },
-  price: { fontSize: 18, color: DARK_TEXT, textAlign: 'center', marginTop: 10, fontWeight: '900', letterSpacing: -0.5 },
-  priceSelected: { color: PRIMARY },
-  approxPrice: { fontSize: 10, color: DARK_TEXT_MUTED, textAlign: 'center', marginTop: 6, lineHeight: 14, fontWeight: '600' },
-  trustRow: { marginTop: 16 },
-  trust: { fontSize: 11, color: DARK_TEXT_MUTED, textAlign: 'center', fontWeight: '500', opacity: 0.7 },
-  cta: {
-    marginTop: 18, backgroundColor: PRIMARY,
-    borderRadius: 16, paddingVertical: 18, alignItems: 'center',
-    shadowColor: PRIMARY,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5, shadowRadius: 20, elevation: 15,
+  popularText: { fontSize: 8, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  creditBadge: {
+    backgroundColor: 'rgba(255,26,92,0.2)', borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 3, marginBottom: 6,
+    borderWidth: 1, borderColor: 'rgba(255,26,92,0.4)',
   },
+  creditBadgeText: { fontSize: 11, fontWeight: '900', color: PRIMARY },
+  packLabel: { fontSize: 12, color: DARK_TEXT_MUTED, fontWeight: '700', marginBottom: 4 },
+  packLabelSelected: { color: DARK_TEXT },
+  packPrice: { fontSize: 22, color: DARK_TEXT, fontWeight: '900', letterSpacing: -0.5 },
+  packPriceSelected: { color: PRIMARY },
+  packSub: { fontSize: 10, color: DARK_TEXT_MUTED, marginTop: 3 },
+
+  // Trust
+  trust: { fontSize: 12, color: DARK_TEXT_MUTED, textAlign: 'center', marginBottom: 16 },
+
+  // CTA
+  cta: { borderRadius: 18, overflow: 'hidden', marginBottom: 14, elevation: 12, shadowColor: PRIMARY, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 16 },
   ctaDisabled: { opacity: 0.5 },
-  ctaText: { color: '#fff', fontSize: 19, fontWeight: '900', letterSpacing: 0.5 },
-  footer: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 22 },
-  link: { fontSize: 12, color: DARK_TEXT_MUTED, textDecorationLine: 'underline', fontWeight: '500' },
-  skipBtn: { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
-  skipText: { fontSize: 16, color: DARK_TEXT_MUTED, fontWeight: '600' },
+  ctaGradient: { paddingVertical: 18, alignItems: 'center', justifyContent: 'center' },
+  ctaText: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
+
+  // Skip / Footer
+  skipBtn: { alignItems: 'center', paddingVertical: 10, marginBottom: 8 },
+  skipText: { fontSize: 14, color: DARK_TEXT_MUTED, fontWeight: '600' },
+  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  footerDot: { color: DARK_TEXT_MUTED, fontSize: 12 },
+  link: { fontSize: 12, color: DARK_TEXT_MUTED, textDecorationLine: 'underline' },
 });

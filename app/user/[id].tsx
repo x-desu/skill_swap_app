@@ -120,7 +120,7 @@ export default function UserProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Skills Offered</Text>
           <View style={styles.skillsContainer}>
-            {user.teachSkills?.length ? user.teachSkills.map((skill: string, idx: number) => (
+            {Array.isArray(user.teachSkills) && user.teachSkills.length > 0 ? user.teachSkills.map((skill: string, idx: number) => (
               <View key={`teach-${idx}`} style={styles.skillChipPrimary}>
                 <Text style={styles.skillTextPrimary}>{skill}</Text>
               </View>
@@ -131,7 +131,7 @@ export default function UserProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Skills Needed</Text>
           <View style={styles.skillsContainer}>
-            {user.wantSkills?.length ? user.wantSkills.map((skill: string, index: number) => (
+            {Array.isArray(user.wantSkills) && user.wantSkills.length > 0 ? user.wantSkills.map((skill: string, index: number) => (
               <View key={`want-${index}`} style={styles.skillChipSecondary}>
                 <Text style={styles.skillTextSecondary}>{skill}</Text>
               </View>
