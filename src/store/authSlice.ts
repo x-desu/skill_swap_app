@@ -25,7 +25,7 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  isProfileComplete: boolean;
+  isProfileComplete: boolean | 'pending' | 'rejected';
   isLoading: boolean;
   error: string | null;
   lastSignInMethod: 'google' | 'apple' | 'email' | 'anonymous' | null;
@@ -150,7 +150,7 @@ const authSlice = createSlice({
         state.isProfileComplete = false;
       }
     },
-    setProfileComplete(state, action: PayloadAction<boolean>) {
+    setProfileComplete(state, action: PayloadAction<boolean | 'pending' | 'rejected'>) {
       state.isProfileComplete = action.payload;
     },
     setAppLoading(state, action: PayloadAction<boolean>) {

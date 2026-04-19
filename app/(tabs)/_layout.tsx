@@ -6,6 +6,8 @@ import { useSelector } from 'react-redux';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useNotifications } from '../../src/hooks/useNotifications';
 import type { RootState } from '../../src/store';
+import * as Location from 'expo-location';
+import { updateUserLocation } from '../../src/services/firestoreService';
 
 const { width } = Dimensions.get('window');
 
@@ -172,13 +174,57 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 }
 
 export default function TabLayout() {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
 
     useEffect(() => {
         if (!isAuthenticated) {
             router.replace('/(auth)/welcome');
         }
     }, [isAuthenticated]);
+
+    // Live Location Update: Registers the user in the geospatial map
+    useEffect(() => {
+        let subscription: Location.LocationSubscription | null = null;
+        let isCancelled = false;
+        
+        const startTracking = async () => {
+            if (!isAuthenticated || !user?.uid) return;
+            
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted' || isCancelled) return;
+
+                // Initial update
+                const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                if (!isCancelled) {
+                    await updateUserLocation(user.uid, pos.coords.latitude, pos.coords.longitude);
+                }
+
+                // Continuous update (coarse)
+                subscription = await Location.watchPositionAsync(
+                    {
+                        accuracy: Location.Accuracy.Balanced,
+                        timeInterval: 60000, // Every 1 minute
+                        distanceInterval: 100, // Or every 100 meters
+                    },
+                    (loc) => {
+                        if (!isCancelled && user?.uid) {
+                            updateUserLocation(user.uid, loc.coords.latitude, loc.coords.longitude).catch(() => {});
+                        }
+                    }
+                );
+            } catch (err) {
+                console.warn('[LocationTracking] Failed to start:', err);
+            }
+        };
+
+        startTracking();
+
+        return () => {
+            isCancelled = true;
+            subscription?.remove();
+        };
+    }, [isAuthenticated, user?.uid]);
 
     return (
         <Tabs

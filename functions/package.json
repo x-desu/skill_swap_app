@@ -17,6 +17,7 @@
     "node": "20"
   },
   "dependencies": {
+    "@google-cloud/vision": "^5.3.5",
     "@stream-io/node-sdk": "^0.7.49",
     "expo": "~54.0.33",
     "firebase-admin": "^13.7.0",

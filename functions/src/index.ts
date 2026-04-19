@@ -389,5 +389,6 @@ export {
   endVideoCall,
   getStreamVideoToken,
 } from './videoCalls';
+export { validateUserProfile } from './userValidation';
 export { deleteChatThread } from './chatThreads';
 export { acceptRequest, declineRequest } from './requests';

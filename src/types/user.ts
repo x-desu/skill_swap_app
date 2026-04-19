@@ -6,12 +6,13 @@ export type Timestamp = FirebaseFirestoreTypes.Timestamp;
 
 export type SkillCategory =
   | 'Tech'
+  | 'Creative'
   | 'Music'
-  | 'Art'
-  | 'Language'
-  | 'Sports'
+  | 'Languages'
   | 'Business'
-  | 'Cooking'
+  | 'Academics'
+  | 'Health'
+  | 'Lifestyle'
   | 'Other';
 
 export interface Skill {
@@ -48,6 +49,10 @@ export interface UserDocument {
   pushToken?: string; // current Expo push token field
   hasSeenPaywall?: boolean;
   revenueCatAppUserId?: string;
+
+  // Geographic position
+  coords?: { latitude: number; longitude: number };
+  geohash?: string; // Geofire geohash for range queries
 
   // Engagement Metrics (Phase 1)
   isOnline?: boolean;
@@ -202,4 +207,4 @@ export interface AppNotification {
 
 // ── Convenience type for creating/updating user profiles ─────────────────────
 
-export type UserProfileInput = Omit<UserDocument, 'uid' | 'createdAt' | 'updatedAt' | 'lastActive' | 'swipeRightCount' | 'swipeLeftCount' | 'mutualMatches'>;
+export type UserProfileInput = Omit<UserDocument, 'uid' | 'createdAt' | 'updatedAt' | 'lastActive' | 'swipeRightCount' | 'swipeLeftCount' | 'mutualMatches' | 'geohash'>;

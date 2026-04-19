@@ -108,6 +108,14 @@ export const verifyRazorpayPayment = onCall(
     const userRef = db.collection('users').doc(userId);
     
     await db.runTransaction(async (transaction) => {
+      // 1. Check for Idempotency (prevent double processing)
+      const paymentRef = db.collection('payments').doc(razorpay_payment_id);
+      const paymentDoc = await transaction.get(paymentRef);
+      if (paymentDoc.exists) {
+        console.log(`[Razorpay] Payment ${razorpay_payment_id} already processed. Skipping.`);
+        return;
+      }
+
       const userDoc = await transaction.get(userRef);
       if (!userDoc.exists) {
         throw new Error('User document not found');
@@ -125,7 +133,6 @@ export const verifyRazorpayPayment = onCall(
       });
 
       // Log Payment in 'payments' collection
-      const paymentRef = db.collection('payments').doc(razorpay_payment_id);
       transaction.set(paymentRef, {
         userId,
         orderId: razorpay_order_id,

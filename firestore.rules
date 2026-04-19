@@ -25,8 +25,13 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isOwner(uid);
       allow update: if isOwner(uid) && 
+        // 1. Block manual updates to sensitive financial and status fields
         (!request.resource.data.diff(resource.data).affectedKeys()
-           .hasAny(['credits', 'creditsSpent', 'lastPaymentId', 'isPremium', 'premiumExpiresAt']));
+           .hasAny(['credits', 'creditsSpent', 'lastPaymentId', 'isPremium', 'premiumExpiresAt', 'lastValidatedAt'])) &&
+        // 2. User can only set isProfileComplete to 'pending_validation'. 
+        //    Only the backend can set it to true/false.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isProfileComplete']) || 
+         request.resource.data.isProfileComplete == 'pending_validation');
     }
 
     // ─── swapRequests/{id} ───────────────────────────────────────────────────

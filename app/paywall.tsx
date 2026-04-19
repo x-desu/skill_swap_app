@@ -12,15 +12,24 @@ import {
 import MapView, { Circle, Marker, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { X, Infinity, Zap, Star, ShieldCheck, MapPin } from 'lucide-react-native';
+import { X, Infinity as InfinityIcon, Zap, Star, ShieldCheck, MapPin, Crown, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Constants from 'expo-constants';
-import { upsertUserProfile } from '../src/services/firestoreService';
+import { 
+  upsertUserProfile, 
+  listenToUsersInRange,
+  updateUserLocation,
+  repairMissingGeohashes,
+} from '../src/services/firestoreService';
 import { getPaywallStrings } from '../src/i18n/paywallI18n';
 import { useAuth } from '../src/hooks/useAuth';
 import { startRazorpayPayment } from '../src/services/razorpayService';
+import { UserMarker } from '../src/components/UserMarker';
+import { distanceBetween } from 'geofire-common';
+import { UserDocument } from '../src/types/user';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PRIMARY = '#ff1a5c';
 const PRIMARY_GLOW = 'rgba(255,26,92,0.25)';
@@ -63,8 +72,19 @@ export default function PaywallScreen() {
   const [region, setRegion] = useState(FALLBACK);
   const [locationLabel, setLocationLabel] = useState('Detecting location…');
   const [showUserLocation, setShowUserLocation] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(1);
   const [purchasing, setPurchasing] = useState(false);
+  const [nearbyUsers, setNearbyUsers] = useState<UserDocument[]>([]);
+  const [mapSettled, setMapSettled] = useState(false);
+  const [searchRadius, setSearchRadius] = useState(50000); // 50km for better discovery coverage
+  useEffect(() => {
+    if (isMapReady) {
+      const t = setTimeout(() => setMapSettled(true), 600);
+      return () => clearTimeout(t);
+    }
+  }, [isMapReady]);
+  const [isRegionStable, setIsRegionStable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +95,7 @@ export default function PaywallScreen() {
         if (cancelled || status !== 'granted') return;
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         if (cancelled) return;
-        const nr = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 };
+        const nr = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.6, longitudeDelta: 0.6 };
         setRegion(nr);
         setShowUserLocation(true);
         mapRef.current?.animateToRegion(nr, 1000);
@@ -90,13 +110,34 @@ export default function PaywallScreen() {
           { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 30 },
           (loc) => {
             if (cancelled) return;
-            setRegion({ latitude: loc.coords.latitude, longitude: loc.coords.longitude, latitudeDelta: 0.06, longitudeDelta: 0.06 });
+            // Periodically update user location in Firestore
+            if (user?.uid) {
+              updateUserLocation(user.uid, loc.coords.latitude, loc.coords.longitude).catch(console.error);
+            }
           }
         );
-      } catch (e) { console.log('[Paywall] Location error', e); }
+      } catch (e) { 
+        console.log('[Paywall] Location error', e); 
+      }
     })();
     return () => { cancelled = true; subscription?.remove(); };
-  }, []);
+  }, [user?.uid]);
+
+  // Listen for nearby users
+  useEffect(() => {
+    if (!showUserLocation || !region.latitude || !region.longitude) return;
+    
+    const unsub = listenToUsersInRange(
+      [region.latitude, region.longitude],
+      searchRadius,
+      (users) => {
+        setNearbyUsers(users);
+      }
+    );
+    
+    return () => unsub();
+  }, [showUserLocation, user?.uid, region.latitude, region.longitude]);
+
 
   const onPurchase = async () => {
     const pack = CREDIT_PACKS[selectedIdx];
@@ -125,37 +166,75 @@ export default function PaywallScreen() {
     Alert.alert('Restore Purchases', 'Credits are consumable. Check your transaction history in Settings for details.');
 
   const openUrl = (url?: string) => { if (url) Linking.openURL(url); };
-  const center = { latitude: region.latitude, longitude: region.longitude };
+
+  // Memoize center to prevent excessive re-renders/invalid coordinate crashes
+  const center = React.useMemo(() => {
+    const lat = Number(region?.latitude);
+    const lng = Number(region?.longitude);
+    if (isNaN(lat) || isNaN(lng)) return FALLBACK;
+    return { 
+      latitude: lat, 
+      longitude: lng,
+      latitudeDelta: region.latitudeDelta || 0.05,
+      longitudeDelta: region.longitudeDelta || 0.05
+    };
+  }, [region.latitude, region.longitude, region.latitudeDelta, region.longitudeDelta]);
+
+  // Deduplicate nearby users to prevent key collisions
+  const uniqueNearbyUsers = React.useMemo(() => {
+    const map = new Map();
+    nearbyUsers.forEach(u => {
+      if (u.uid) map.set(u.uid, u);
+    });
+    return Array.from(map.values());
+  }, [nearbyUsers]);
 
   const features = [
-    { label: 'Unlimited\nSwipes',  icon: <Infinity    color={PRIMARY} size={22} /> },
+    { label: 'Unlimited\nSwipes',  icon: <InfinityIcon color={PRIMARY} size={22} /> },
     { label: 'Priority\nMatching', icon: <Zap         color={PRIMARY} size={22} /> },
     { label: 'Instant\nMatches',   icon: <Star        color={PRIMARY} size={22} /> },
     { label: 'Verified\nProfiles', icon: <ShieldCheck color={PRIMARY} size={22} /> },
   ];
 
+  const isValidCenter = center && !isNaN(center.latitude) && !isNaN(center.longitude);
+
   return (
     <View style={styles.root}>
       {/* ── Map Hero ── */}
       <View style={styles.mapWrap}>
-        <MapView
-          ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          initialRegion={region}
-          showsUserLocation={showUserLocation}
-          userInterfaceStyle="dark"
-          scrollEnabled={false}
-          zoomEnabled={false}
-          pitchEnabled={false}
-          rotateEnabled={false}
-        >
-          <Circle center={center} radius={4500} strokeColor={PRIMARY} strokeWidth={2} fillColor={MAP_CIRCLE} />
-          <Marker coordinate={center}>
-            <View style={styles.markerDot}>
-              <MapPin color="#fff" size={14} />
-            </View>
-          </Marker>
-        </MapView>
+        {isValidCenter && (
+          <MapView
+            ref={mapRef}
+            style={StyleSheet.absoluteFill}
+            initialRegion={region}
+            showsUserLocation={true}
+            userInterfaceStyle="dark"
+            onMapReady={() => setIsMapReady(true)}
+          >
+            {mapSettled && (
+              <>
+                <Circle 
+                  center={center} 
+                  radius={searchRadius} 
+                  strokeColor={PRIMARY} 
+                  strokeWidth={4} 
+                  fillColor={MAP_CIRCLE} 
+                />
+                
+                {uniqueNearbyUsers.map((u) => {
+                  if (!u.coords) return null;
+                  return (
+                    <UserMarker 
+                      key={`user-${u.uid}`} 
+                      user={u} 
+                      isMe={u.uid === user?.uid}
+                    />
+                  );
+                })}
+              </>
+            )}
+          </MapView>
+        )}
 
         {/* Gradient fade at bottom of map */}
         <LinearGradient
@@ -174,11 +253,17 @@ export default function PaywallScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Location pill */}
-        <BlurView intensity={30} tint="dark" style={styles.locationPill}>
-          <MapPin color={PRIMARY} size={12} />
-          <Text style={styles.locationText} numberOfLines={1}>{locationLabel}</Text>
-        </BlurView>
+        {/* ── Location Header ── */}
+        {isMapReady && (
+          <View style={styles.locationHeader}>
+            <View style={styles.locationBadge}>
+              <MapPin size={14} color={PRIMARY} style={{ marginRight: 8 }} />
+              <Text style={styles.locationText} numberOfLines={1}>
+                {locationLabel === 'Detecting location…' ? 'Pune, India' : locationLabel}
+              </Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* ── Bottom Sheet ── */}
@@ -293,13 +378,31 @@ const styles = StyleSheet.create({
     borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
   },
   restoreText: { color: DARK_TEXT, fontSize: 13, fontWeight: '600' },
-  locationPill: {
-    position: 'absolute', left: 16, right: 16, bottom: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
-    overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,26,92,0.3)',
+  locationHeader: {
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: 60, // Raised slightly to clear sheet transition
+    width: '100%',
+    alignItems: 'center',
+    zIndex: 99,
   },
-  locationText: { color: DARK_TEXT, fontSize: 13, fontWeight: '600', flex: 1 },
+  locationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 30,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: PRIMARY,
+    backgroundColor: 'rgba(10,0,16,0.92)', // More opaque for better readability
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  locationText: { color: DARK_TEXT, fontSize: 15, fontWeight: '900', letterSpacing: 0.3 },
   markerDot: {
     width: 30, height: 30, borderRadius: 15, backgroundColor: PRIMARY,
     alignItems: 'center', justifyContent: 'center',

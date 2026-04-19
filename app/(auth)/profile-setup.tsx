@@ -29,57 +29,52 @@ import { useAuthDispatch } from '../../src/hooks/useAuth';
 import { setProfileComplete, setUser } from '../../src/store/authSlice';
 import { uploadProfilePhoto } from '../../src/services/storageService';
 import { upsertUserProfile } from '../../src/services/firestoreService';
+import firestore from '@react-native-firebase/firestore';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../src/store';
 
 // ─── Skill Taxonomy ───────────────────────────────────────────────────────────
 
 const SKILL_TAXONOMY: Record<string, string[]> = {
   'Tech': [
-    'Python', 'JavaScript', 'TypeScript', 'React', 'React Native', 'Node.js',
-    'Swift', 'Kotlin', 'Flutter', 'Java', 'C++', 'Rust', 'Go', 'SQL',
-    'MongoDB', 'Firebase', 'AWS', 'Docker', 'Git', 'Machine Learning',
-    'Data Science', 'UI/UX Design', 'Figma', 'Cybersecurity', 'DevOps',
-    'Blockchain', 'Web3', 'Excel / Sheets', 'PowerPoint', 'Notion',
+    'HTML/CSS', 'JavaScript', 'TypeScript', 'React', 'Vue', 'Angular', 'Node.js', 'PHP', 'Ruby', 'Python',
+    'Swift', 'Kotlin', 'React Native', 'Flutter', 'Ionic', 'Data Analysis', 'SQL', 'Machine Learning',
+    'AI Prompt Engineering', 'Data Visualization', 'Ethical Hacking', 'Network Security', 'Cryptography',
+    'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Linux Admin', 'Git/GitHub', 'Jira', 'Notion', 'Excel', 'Zapier',
   ],
   'Creative': [
-    'Photography', 'Video Editing', 'Drawing', 'Illustration', 'Painting',
-    'Graphic Design', 'Logo Design', 'Animation', '3D Modeling', 'Blender',
-    'Adobe Photoshop', 'Adobe Illustrator', 'Lightroom', 'Canva',
-    'Comic Art', 'Calligraphy', 'Pottery', 'Textile Design', 'Fashion Design',
+    'Branding', 'Logo Design', 'Typography', 'Illustration', 'Canva', 'Figma', 'Adobe XD', 'Wireframing',
+    'User Research', 'Photoshop', 'Illustrator', 'Procreate', 'Comic Art', 'Photography', 'Landscape Photography',
+    'Lightroom', 'Video Editing', '2D/3D Animation', 'Blender', 'DaVinci Resolve', 'Painting', 'Sketching',
+    'Pottery', 'Calligraphy',
   ],
   'Music': [
-    'Guitar', 'Piano', 'Violin', 'Drums', 'Bass Guitar', 'Ukulele',
-    'Singing', 'Songwriting', 'Music Production', 'DJ', 'Beatmaking',
-    'Music Theory', 'Flute', 'Saxophone', 'Tabla', 'Sitar',
+    'Guitar', 'Piano/Keyboard', 'Drums', 'Violin', 'Ukulele', 'Bass Guitar', 'Saxophone', 'Singing', 'Rap',
+    'Beatboxing', 'Music Production', 'Sound Design', 'DJing', 'Mixing & Mastering', 'Dance', 'Acting',
+    'Magic', 'Stand-up Comedy',
   ],
   'Languages': [
-    'English', 'Spanish', 'French', 'German', 'Mandarin', 'Japanese',
-    'Korean', 'Arabic', 'Hindi', 'Portuguese', 'Italian', 'Russian',
-    'Turkish', 'Dutch', 'Swedish', 'Sign Language',
-  ],
-  'Fitness': [
-    'Yoga', 'Meditation', 'Gym Training', 'Calisthenics', 'CrossFit',
-    'Running', 'Swimming', 'Cycling', 'Pilates', 'Martial Arts', 'Boxing',
-    'Dance', 'Zumba', 'Nutrition & Diet', 'Rock Climbing',
-  ],
-  'Cooking': [
-    'Cooking', 'Baking', 'Pastry & Desserts', 'Indian Cuisine', 'Italian Cuisine',
-    'Japanese Cuisine', 'Vegan Cooking', 'BBQ & Grilling', 'Cocktail Making',
-    'Coffee Brewing', 'Meal Prep', 'Fermentation',
+    'English', 'Spanish', 'French', 'Mandarin', 'Japanese', 'German', 'Russian', 'Arabic', 'Hindi',
+    'Portuguese', 'Sign Language', 'Conversation Practice', 'Business English', 'IELTS/TOEFL Prep',
   ],
   'Business': [
-    'Marketing', 'Digital Marketing', 'SEO', 'Social Media', 'Content Writing',
-    'Copywriting', 'Entrepreneurship', 'Finance', 'Investing', 'Accounting',
-    'Product Management', 'Sales', 'Public Speaking', 'Leadership',
-    'Project Management', 'Business Strategy',
+    'Social Media Marketing', 'SEO', 'Content Marketing', 'Email Marketing', 'PPC/Ads', 'Investing',
+    'Personal Finance', 'Accounting', 'Crypto/Trading', 'Copywriting', 'Blog Writing', 'Technical Writing',
+    'Scriptwriting', 'Public Speaking', 'Leadership', 'Negotiation', 'Project Management', 'Sales',
   ],
-  'Academic': [
-    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'History',
-    'Economics', 'Psychology', 'Philosophy', 'Literature', 'Writing',
-    'Research', 'Statistics', 'Architecture',
+  'Academics': [
+    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Statistics', 'History', 'Philosophy', 'Psychology',
+    'Economics', 'Literature', 'SAT/ACT Prep', 'GRE/GMAT', 'Civil Services',
   ],
-  'Practical': [
-    'Carpentry', 'Plumbing', 'Electrical Work', 'Gardening', 'Home Repair',
-    'Sewing', 'Knitting', 'Car Maintenance', '3D Printing', 'Electronics',
+  'Health': [
+    'Gym Training', 'Calisthenics', 'CrossFit', 'Running', 'Swimming', 'Rock Climbing', 'Yoga', 'Meditation',
+    'Breathwork', 'Mindfulness', 'Diet Planning', 'Sports Nutrition', 'Vegan/Keto Lifestyle', 'Tennis',
+    'Badminton', 'Basketball', 'Football', 'Chess',
+  ],
+  'Lifestyle': [
+    'Italian Cooking', 'Indian Cooking', 'Continental Cooking', 'Baking', 'Pastry', 'Mixology', 'Coffee Brewing',
+    'Sewing', 'Knitting', 'Fashion Design', 'Woodworking', 'Jewelry Making', 'Gardening', 'Interior Design',
+    'Home Repair', 'Organizing',
   ],
 };
 
@@ -252,6 +247,29 @@ export default function ProfileSetup() {
   const [photoUri, setPhotoUri] = useState<string | null>(firebaseUser?.photoURL ?? null);
   const [location, setLocation] = useState<{ city: string; country: string } | null>(null);
   const [isLocationLoading, setIsLocationLoading] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const { isProfileComplete } = useSelector((state: RootState) => state.auth);
+
+  // ── Listen for validation completion ──────────────────────────────────────
+  // If the backend marks validation as complete or failed, Redux will be updated via _layout logic
+  // but we also want to react locally to show the error if it fails.
+  useMemo(() => {
+    if (!firebaseUser) return;
+    const unsub = firestore().collection('users').doc(firebaseUser.uid).onSnapshot(snap => {
+      const data = snap.data();
+      if (data) {
+        if (data.isProfileComplete === true) {
+          dispatch(setProfileComplete(true));
+          router.replace('/(tabs)');
+        } else if (data.isProfileComplete === false && data.validationError) {
+          setValidationError(data.validationError);
+          setIsLoading(false);
+        }
+      }
+    });
+    return () => unsub();
+  }, [firebaseUser]);
 
   // ── Skill helpers ──────────────────────────────────────────────────────────
 
@@ -389,12 +407,12 @@ export default function ProfileSetup() {
         reviewCount: 0,
         completedSwaps: 0,
         credits: 10,
-        isProfileComplete: true,
+        isProfileComplete: 'pending_validation', // SERVER will set to true/false
         hasPhoto: !!finalPhotoURL,
       });
 
-      dispatch(setProfileComplete(true));
-      router.replace('/(tabs)');
+      dispatch(setProfileComplete('pending'));
+      // No router.replace here — we wait for the listener to find the server's update
     } catch (e) {
       console.error('Profile setup error:', e);
       Alert.alert('Error', 'Could not save profile. Please try again.');
@@ -406,15 +424,20 @@ export default function ProfileSetup() {
   // ── Derived ────────────────────────────────────────────────────────────────
 
   // Default suggestion chips (shown when input is empty) — exclude already selected
-  const teachSuggestions = ['Python', 'Design', 'React', 'Photography', 'Music', 'Marketing', 'Guitar', 'Cooking']
+  const teachSuggestions = ['Python', 'Figma', 'Photography', 'Spanish', 'Marketing', 'Yoga', 'Cooking', 'Guitar']
     .filter((s) => !skillsOffered.some((o) => o.toLowerCase() === s.toLowerCase()))
     .slice(0, 6);
 
-  const learnSuggestions = ['Guitar', 'UI/UX', 'JavaScript', 'Public Speaking', 'French', 'Fitness', 'Piano', 'Yoga']
+  const learnSuggestions = ['React', 'Public Speaking', 'French', 'Investing', 'Physics', 'Mixing & Mastering', 'Baking', 'Chess']
     .filter((s) => !skillsNeeded.some((n) => n.toLowerCase() === s.toLowerCase()))
     .slice(0, 6);
 
-  const canSubmit = displayName.trim().length > 0;
+  // Rigorous check: Name length, Photo, and 1 skill per side
+  const canSubmit = 
+    displayName.trim().length >= 3 && 
+    !!photoUri && 
+    skillsOffered.length >= 1 && 
+    skillsNeeded.length >= 1;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -595,28 +618,31 @@ export default function ProfileSetup() {
         {/* ── Bottom Actions ── */}
         <View style={styles.actions}>
           <TouchableOpacity
-            style={[styles.submitBtn, !canSubmit && styles.submitDisabled]}
+            style={[styles.submitBtn, (!canSubmit || isProfileComplete === 'pending') && styles.submitDisabled]}
             onPress={handleFinish}
-            disabled={isLoading || !canSubmit}
+            disabled={isLoading || !canSubmit || isProfileComplete === 'pending'}
             activeOpacity={0.85}
           >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
+            {isLoading || isProfileComplete === 'pending' ? (
+              <View style={styles.submitInner}>
+                <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.submitText}>
+                   {isProfileComplete === 'pending' ? "Validating Profile..." : "Saving..."}
+                </Text>
+              </View>
             ) : (
               <View style={styles.submitInner}>
-                <Text style={styles.submitText}>Get Started</Text>
+                <Text style={styles.submitText}>Submit for Verification</Text>
                 <ChevronRight size={20} color="#fff" strokeWidth={2.5} />
               </View>
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.skipBtn}
-            onPress={() => dispatch(setProfileComplete(true))}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.skipText}>Skip for now</Text>
-          </TouchableOpacity>
+          {validationError && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>{validationError}</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -826,6 +852,18 @@ const styles = StyleSheet.create({
   submitDisabled: { opacity: 0.35, shadowOpacity: 0 },
   submitInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   submitText: { fontSize: 16, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
-  skipBtn: { alignItems: 'center', paddingVertical: 10 },
-  skipText: { color: 'rgba(255,255,255,0.28)', fontSize: 14 },
+  errorBanner: {
+    backgroundColor: 'rgba(255, 26, 92, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 26, 92, 0.3)',
+  },
+  errorText: {
+    color: '#ff4d7d',
+    fontSize: 13,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
 });

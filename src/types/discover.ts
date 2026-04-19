@@ -1,4 +1,13 @@
-export type SkillCategory = 'Tech' | 'Music' | 'Art' | 'Language' | 'Sports' | 'Business' | 'Cooking' | 'All';
+export type SkillCategory =
+  | 'Tech'
+  | 'Creative'
+  | 'Music'
+  | 'Languages'
+  | 'Business'
+  | 'Academics'
+  | 'Health'
+  | 'Lifestyle'
+  | 'All';
 
 export interface FilterState {
   maxDistance: number;         // Max distance in km (up to 100, or 0/null for any)
@@ -12,13 +21,14 @@ export interface FilterState {
 
 export const CATEGORY_SKILLS_MAP: Record<SkillCategory, string[]> = {
   All: [],
-  Tech: ['react', 'python', 'coding', 'ai', 'javascript', 'swift', 'flutter', 'design', 'excel', 'tech'],
-  Music: ['guitar', 'piano', 'singing', 'dj', 'music', 'drums'],
-  Art: ['drawing', 'painting', 'photography', 'video', 'art', 'sculpting'],
-  Language: ['spanish', 'french', 'hindi', 'mandarin', 'english', 'writing', 'language'],
-  Sports: ['yoga', 'dance', 'football', 'cricket', 'swimming', 'fitness', 'workout'],
-  Business: ['marketing', 'sales', 'business', 'startup', 'finance', 'accounting'],
-  Cooking: ['baking', 'cooking', 'chef', 'culinary'],
+  Tech: ['coding', 'web', 'mobile', 'ai', 'data', 'software', 'programming', 'python', 'react', 'javascript', 'swift', 'cloud'],
+  Creative: ['design', 'art', 'video', 'photo', 'graphic', 'ui', 'ux', 'animation', 'drawing', 'painting', 'figma'],
+  Music: ['guitar', 'piano', 'singing', 'drums', 'vocals', 'production', 'dj', 'mixing', 'performing'],
+  Languages: ['english', 'spanish', 'french', 'hindi', 'mandarin', 'japanese', 'german', 'translation'],
+  Business: ['marketing', 'sales', 'finance', 'startup', 'management', 'writing', 'seo', 'strategy'],
+  Academics: ['math', 'physics', 'science', 'history', 'tutoring', 'economics', 'research', 'test prep'],
+  Health: ['fitness', 'yoga', 'gym', 'nutrition', 'sports', 'meditation', 'wellness', 'running'],
+  Lifestyle: ['cooking', 'baking', 'diy', 'crafts', 'home', 'gardening', 'sewing', 'woodworking'],
 };
 
 export const DEFAULT_FILTERS: FilterState = {
